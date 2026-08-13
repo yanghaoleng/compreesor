@@ -8,3 +8,4 @@ public/ffmpeg/
 apps/desktop/release/
 apps/desktop/node_modules/
 packages/cli/node_modules/
+.vercel

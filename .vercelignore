@@ -1,0 +1,10 @@
+.git
+.github
+.vercel
+node_modules
+dist
+apps
+packages
+tests
+playwright-report
+test-results
