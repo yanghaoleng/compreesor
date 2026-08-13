@@ -1,0 +1,49 @@
+{
+  "name": "compreesor-cli",
+  "version": "1.0.0",
+  "description": "Compress and convert images, SVG, GIF and video from the command line.",
+  "type": "module",
+  "bin": {
+    "compreesor": "bin/compreesor.js"
+  },
+  "exports": {
+    ".": "./src/core.js",
+    "./core": "./src/core.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/test.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "keywords": [
+    "image-compression",
+    "video-compression",
+    "svg",
+    "svgo",
+    "sharp",
+    "ffmpeg",
+    "cli"
+  ],
+  "author": "Mikey Wa",
+  "homepage": "https://compreesor.mikeywa.icu/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanghaoleng/compreesor.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/yanghaoleng/compreesor/issues",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "commander": "^14.0.2",
+    "sharp": "^0.34.5",
+    "svgo": "^4.0.2"
+  }
+}

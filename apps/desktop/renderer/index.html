@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data:; style-src 'self'; script-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compreesor</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <div class="brand"><span>↓</span><div><strong>Compreesor</strong><small>桌面图片压缩</small></div></div>
+        <div class="settings">
+          <label>格式
+            <select id="format">
+              <option value="original">原格式</option>
+              <option value="jpeg">JPG</option>
+              <option value="webp">WebP</option>
+              <option value="png">PNG</option>
+              <option value="avif">AVIF</option>
+            </select>
+          </label>
+          <label>质量 <input id="quality" type="number" min="1" max="100" value="80" /></label>
+        </div>
+      </header>
+
+      <section id="dropzone" class="dropzone" tabindex="0" role="button">
+        <div class="drop-icon">＋</div>
+        <h1>拖入图片，立即压缩</h1>
+        <p>JPG、PNG、WebP、AVIF、SVG</p>
+        <small>处理成功后直接替换原文件；转格式时会在原目录改为新后缀</small>
+        <input id="picker" type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/svg+xml" multiple hidden />
+      </section>
+
+      <section class="queue" aria-live="polite">
+        <div class="queue-header"><strong id="summary">等待添加图片</strong><button id="clear" type="button">清空</button></div>
+        <div id="jobs" class="jobs"></div>
+      </section>
+    </main>
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

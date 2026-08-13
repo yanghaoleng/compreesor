@@ -1,0 +1,46 @@
+{
+  "name": "compreesor-desktop",
+  "version": "1.0.0",
+  "description": "Compreesor desktop app for drag-and-drop image compression and conversion.",
+  "type": "module",
+  "main": "main.js",
+  "author": "Mikey Wa",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac dmg zip"
+  },
+  "dependencies": {
+    "compreesor-cli": "file:../../packages/cli"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "icu.mikeywa.compreesor",
+    "productName": "Compreesor",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "renderer/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "title": "Compreesor ${version}"
+    }
+  }
+}

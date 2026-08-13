@@ -1,0 +1,41 @@
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  color: #22252a;
+  background: #f6f8fb;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 520px; min-height: 100vh; }
+button, select, input { font: inherit; }
+.app { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; gap: 14px; padding: 22px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand > span { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 11px; color: #083a8e; background: #d3f1ff; font-size: 24px; font-weight: 900; }
+.brand div { display: grid; gap: 2px; }
+.brand strong { font-size: 19px; }
+.brand small { color: #70757f; font-size: 10px; font-weight: 700; }
+.settings { display: flex; align-items: center; gap: 8px; }
+.settings label { display: flex; align-items: center; gap: 5px; color: #70757f; font-size: 11px; font-weight: 800; }
+select, input { height: 32px; border: 1px solid #dfe2e8; border-radius: 8px; background: white; padding: 0 8px; color: #22252a; }
+input { width: 60px; }
+.dropzone { min-height: 195px; display: grid; place-items: center; align-content: center; gap: 7px; padding: 22px; border: 1.5px dashed #82b4df; border-radius: 16px; text-align: center; background: rgba(255,255,255,.78); transition: transform .18s ease, background .18s ease; cursor: pointer; }
+.dropzone.dragging { transform: scale(.99); background: #e6f5ff; }
+.drop-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: #083a8e; background: #d3f1ff; font-size: 26px; }
+.dropzone h1, .dropzone p { margin: 0; }
+.dropzone h1 { font-size: 18px; }
+.dropzone p, .dropzone small { color: #70757f; }
+.dropzone p { font-size: 12px; }
+.dropzone small { max-width: 390px; font-size: 10px; line-height: 1.5; }
+.queue { min-height: 0; overflow: auto; border-top: 1px solid #e3e5e9; }
+.queue-header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; padding: 12px 0 8px; background: #f6f8fb; }
+.queue-header strong { font-size: 12px; }
+.queue-header button { color: #70757f; border: 0; background: transparent; font-size: 11px; cursor: pointer; }
+.jobs { display: grid; }
+.job { min-height: 54px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 10px; border-top: 1px solid #e7e9ed; }
+.job div { min-width: 0; display: grid; gap: 3px; }
+.job strong, .job span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job strong { font-size: 12px; }
+.job span { color: #858a93; font-size: 9px; }
+.job em { color: #49657e; font-size: 10px; font-style: normal; font-weight: 800; }
+.job.done em { color: #147b4d; }
+.job.error em, .job.error span { color: #b8354c; }

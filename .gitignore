@@ -1,0 +1,10 @@
+node_modules/
+dist/
+public/ffmpeg/
+.vercel/
+.DS_Store
+*.log
+*.tgz
+apps/desktop/release/
+apps/desktop/node_modules/
+packages/cli/node_modules/
