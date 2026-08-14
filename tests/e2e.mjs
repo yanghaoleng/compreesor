@@ -139,7 +139,7 @@ await page.locator('.donate-popover').waitFor()
 await page.locator('.donate-popover.is-viewport-pinned').waitFor()
 await page.waitForFunction(() => document.querySelector('.spring-scale-word')?.getAnimations().length)
 const firstDonatePraise = (await page.locator('.donate-praise-line').innerText()).trim()
-if (firstDonatePraise !== '你很会给生活做减法，愿省下的空间都留给喜欢的事。') {
+if (firstDonatePraise !== '认真整理文件的人，做事通常也很靠谱。愿你今天一路顺手。') {
   throw new Error(`Unexpected first donation praise: ${firstDonatePraise}`)
 }
 const springScaleTiming = await page.locator('.spring-scale-word').evaluateAll((units) => units.slice(0, 2).map((unit) => {
@@ -200,7 +200,7 @@ await donateTrigger.click()
 await page.locator('.donate-popover').waitFor()
 await page.waitForFunction(() => document.querySelector('.spring-scale-word')?.getAnimations().length)
 const secondDonatePraise = (await page.locator('.donate-praise-line').innerText()).trim()
-if (secondDonatePraise !== '认真整理文件的人，做事通常也很靠谱。愿你今天一路顺手。' || secondDonatePraise === firstDonatePraise) {
+if (secondDonatePraise !== '你的效率感很漂亮，愿任务越变越小，成就感越攒越大。' || secondDonatePraise === firstDonatePraise) {
   throw new Error(`Donation praise should change without repeating when reopened: ${secondDonatePraise}`)
 }
 await page.waitForFunction(() => Array.from(document.querySelectorAll('.spring-scale-word')).every(
