@@ -1,4 +1,6 @@
 import type { FFmpeg } from '@ffmpeg/ffmpeg'
+import { MEDIA_PRESET_SETTINGS } from './compressionPresets'
+import type { CompressionPreset } from './types'
 
 export type VideoOutputPreference = 'original' | 'mp4' | 'mov' | 'mov-alpha' | 'mp3'
 
@@ -97,14 +99,6 @@ async function transcode(
   }
 }
 
-const VIDEO_SCALE = 'scale=min(1280\\,iw):min(720\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,fps=30'
-const H264_ARGS = [
-  '-map', '0:v:0', '-map', '0:a?', '-vf', VIDEO_SCALE,
-  '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
-  '-maxrate', '1800k', '-bufsize', '3600k', '-pix_fmt', 'yuv420p',
-  '-c:a', 'aac', '-b:a', '96k', '-ac', '2', '-metadata:s:v:0', 'rotate=0',
-]
-
 function resolveOriginalVideoOutput(file: File) {
   const inputExtension = safeExtension(file)
   if (inputExtension === 'mov') return { extension: 'mov', label: 'MOV' }
@@ -117,37 +111,81 @@ function resolveOriginalVideoOutput(file: File) {
   return { extension: 'mp4', label: 'MP4' }
 }
 
-function videoCommand(extension: string, preserveAlpha: boolean, inputName: string, outputName: string) {
+function videoCommand(
+  extension: string,
+  preserveAlpha: boolean,
+  preset: CompressionPreset,
+  inputName: string,
+  outputName: string,
+) {
+  const profile = MEDIA_PRESET_SETTINGS[preset]
+  if ('copy' in profile.video && !preserveAlpha) {
+    return [
+      '-i', inputName, '-map', '0', '-c', 'copy',
+      ...(extension === 'mp4' || extension === 'mov' ? ['-movflags', '+faststart'] : []),
+      outputName,
+    ]
+  }
+
+  const video = 'copy' in profile.video ? null : profile.video
+  const filter = video
+    ? `scale=min(${Math.round(video.maxHeight * 16 / 9)}\\,iw):min(${video.maxHeight}\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,fps=${video.fps}`
+    : null
+  const filterArgs = filter ? ['-vf', filter] : []
+  const audioBitrate = profile.video.audioBitrate
+
   if (preserveAlpha) {
     return [
       '-i', inputName, '-map', '0:v:0', '-map', '0:a?',
-      '-vf', 'scale=min(1280\\,iw):min(720\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,fps=30',
-      '-c:v', 'qtrle', '-pix_fmt', 'argb', '-c:a', 'aac', '-b:a', '96k', outputName,
+      ...filterArgs,
+      '-c:v', 'qtrle', '-pix_fmt', 'argb', '-c:a', 'aac', '-b:a', audioBitrate, outputName,
     ]
   }
   if (extension === 'webm') {
+    const webm = profile.webm
+    if ('copy' in webm) throw new Error('无法创建无损 WebM 命令')
     return [
-      '-i', inputName, '-map', '0:v:0', '-map', '0:a?', '-vf', VIDEO_SCALE,
-      '-c:v', 'libvpx-vp9', '-crf', '38', '-b:v', '0', '-deadline', 'realtime', '-cpu-used', '5',
-      '-c:a', 'libopus', '-b:a', '96k', outputName,
+      '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
+      '-c:v', 'libvpx-vp9', '-crf', String(webm.crf), '-b:v', '0', '-deadline', 'realtime', '-cpu-used', String(webm.cpuUsed),
+      '-c:a', 'libopus', '-b:a', audioBitrate, outputName,
     ]
   }
   if (extension === 'avi') {
     return [
-      '-i', inputName, '-map', '0:v:0', '-map', '0:a?', '-vf', VIDEO_SCALE,
-      '-c:v', 'mpeg4', '-q:v', '8', '-c:a', 'libmp3lame', '-b:a', '96k', outputName,
+      '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
+      '-c:v', 'mpeg4', '-q:v', preset === 'extreme' ? '10' : '8', '-c:a', 'libmp3lame', '-b:a', audioBitrate, outputName,
     ]
   }
   if (extension === 'mpg' || extension === 'mpeg') {
     return [
-      '-i', inputName, '-map', '0:v:0', '-map', '0:a?', '-vf', VIDEO_SCALE,
-      '-c:v', 'mpeg2video', '-q:v', '10', '-c:a', 'mp2', '-b:a', '96k', outputName,
+      '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
+      '-c:v', 'mpeg2video', '-q:v', preset === 'extreme' ? '12' : '8', '-c:a', 'mp2', '-b:a', audioBitrate, outputName,
     ]
   }
-  return ['-i', inputName, ...H264_ARGS, '-movflags', '+faststart', outputName]
+  if (!video) throw new Error('无法创建无损视频命令')
+  return [
+    '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(video.crf),
+    '-maxrate', video.maxRate, '-bufsize', video.bufferSize, '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', video.audioBitrate, '-ac', '2', '-metadata:s:v:0', 'rotate=0',
+    '-movflags', '+faststart', outputName,
+  ]
 }
 
-export function compressGif(file: File, jobId: string, onProgress: ProgressReporter) {
+export function compressGif(
+  file: File,
+  jobId: string,
+  preset: CompressionPreset,
+  onProgress: ProgressReporter,
+) {
+  const gif = MEDIA_PRESET_SETTINGS[preset].gif
+  if ('copy' in gif) {
+    onProgress(100, '已保留原始 GIF')
+    return Promise.resolve(file as Blob)
+  }
+  const paletteUse = gif.dither === 'bayer'
+    ? 'paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle'
+    : 'paletteuse=dither=none:diff_mode=rectangle'
   return transcode(
     file,
     jobId,
@@ -157,7 +195,7 @@ export function compressGif(file: File, jobId: string, onProgress: ProgressRepor
       '-i',
       inputName,
       '-filter_complex',
-      '[0:v]fps=12,scale=min(960\\,iw):min(960\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle',
+      `[0:v]fps=${gif.fps},scale=min(${gif.maxDimension}\\,iw):min(${gif.maxDimension}\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=${gif.maxColors}:stats_mode=diff[p];[s1][p]${paletteUse}`,
       '-loop',
       '0',
       outputName,
@@ -170,6 +208,7 @@ export async function compressVideo(
   file: File,
   jobId: string,
   preference: VideoOutputPreference,
+  preset: CompressionPreset,
   onProgress: ProgressReporter,
 ): Promise<MediaOutput> {
   if (preference === 'mp3') {
@@ -179,11 +218,16 @@ export async function compressVideo(
       'mp3',
       '正在提取 MP3 音频',
       (inputName, outputName) => [
-        '-i', inputName, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', '160k', outputName,
+        '-i', inputName, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MEDIA_PRESET_SETTINGS[preset].mp3Bitrate, outputName,
       ],
       onProgress,
     )
     return { blob, extension: 'mp3', label: 'MP3' }
+  }
+
+  if (preset === 'lossless' && preference === 'original') {
+    onProgress(100, '已保留原始视频')
+    return { blob: file, ...resolveOriginalVideoOutput(file) }
   }
 
   const preserveAlpha = preference === 'mov-alpha'
@@ -197,7 +241,7 @@ export async function compressVideo(
     jobId,
     output.extension,
     '正在压缩视频',
-    (inputName, outputName) => videoCommand(output.extension, preserveAlpha, inputName, outputName),
+    (inputName, outputName) => videoCommand(output.extension, preserveAlpha, preset, inputName, outputName),
     onProgress,
   )
   return { blob, ...output }

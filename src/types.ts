@@ -1,7 +1,9 @@
 export type ImageFormat = 'jpeg' | 'png' | 'webp' | 'avif' | 'jxl'
+export type CompressionPreset = 'extreme' | 'balanced' | 'lossless'
 
 export type CompressionSettings = {
   outputFormat: ImageFormat
+  preset: CompressionPreset
   quality: number
   targetBytes: number | null
   maxDimension: number

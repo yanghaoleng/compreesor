@@ -21,6 +21,86 @@ const GIF_EXTENSIONS = new Set(['.gif'])
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.mpeg', '.mpg'])
 const ALL_EXTENSIONS = new Set([...STATIC_IMAGE_EXTENSIONS, ...GIF_EXTENSIONS, ...VIDEO_EXTENSIONS])
 
+const PRESET_ALIASES = new Map([
+  ['extreme', 'extreme'],
+  ['max', 'extreme'],
+  ['极限', 'extreme'],
+  ['balanced', 'balanced'],
+  ['enough', 'balanced'],
+  ['够用', 'balanced'],
+  ['lossless', 'lossless'],
+  ['无损', 'lossless'],
+])
+
+export const QUALITY_PRESETS = Object.freeze({
+  extreme: Object.freeze({
+    label: '极限',
+    image: Object.freeze({ quality: 55, avifQuality: 35, effort: 8, maxDimension: 1600 }),
+    png: Object.freeze({ compressionLevel: 9, effort: 10, palette: true, quality: 60, colours: 128, dither: 0.75 }),
+    svg: Object.freeze({ multipass: true, floatPrecision: 2, preserveGeometry: false }),
+    gif: Object.freeze({ fps: 10, maxWidth: 640, maxColors: 64, dither: 'none' }),
+    video: Object.freeze({ maxHeight: 480, h264Crf: 32, h264Preset: 'slow', vp9Crf: 40, vp9CpuUsed: 2, audioBitrate: '80k' }),
+    mp3: Object.freeze({ bitrate: '96k' }),
+  }),
+  balanced: Object.freeze({
+    label: '够用',
+    image: Object.freeze({ quality: 80, avifQuality: 60, effort: 6, maxDimension: 2560 }),
+    png: Object.freeze({ compressionLevel: 9, effort: 7, palette: false }),
+    svg: Object.freeze({ multipass: true, floatPrecision: 3, preserveGeometry: false }),
+    gif: Object.freeze({ fps: 12, maxWidth: 960, maxColors: 128, dither: 'bayer' }),
+    video: Object.freeze({ maxHeight: 720, h264Crf: 28, h264Preset: 'veryfast', vp9Crf: 34, vp9CpuUsed: 4, audioBitrate: '128k' }),
+    mp3: Object.freeze({ bitrate: '160k' }),
+  }),
+  lossless: Object.freeze({
+    label: '无损',
+    image: Object.freeze({ quality: 100, avifQuality: 100, effort: 8, maxDimension: null, lossless: true }),
+    png: Object.freeze({ compressionLevel: 9, effort: 10, palette: false }),
+    svg: Object.freeze({ multipass: true, preserveGeometry: true }),
+    gif: Object.freeze({ copy: true }),
+    video: Object.freeze({ copy: true }),
+    // MP3 本身不支持无损编码；320k 是该格式的最高保真映射。
+    mp3: Object.freeze({ bitrate: '320k', inherentlyLossy: true }),
+  }),
+})
+
+export function normalizeQualityPreset(preset = 'balanced') {
+  const normalized = PRESET_ALIASES.get(String(preset).trim().toLowerCase())
+  if (!normalized) throw new Error(`未知质量预设：${preset}`)
+  return normalized
+}
+
+export function resolveCompressionSettings(options = {}) {
+  const preset = normalizeQualityPreset(options.preset ?? 'balanced')
+  const base = QUALITY_PRESETS[preset]
+  const numericQuality = options.quality == null ? null : Number(options.quality)
+  if (numericQuality != null && !Number.isFinite(numericQuality)) {
+    throw new Error('quality 必须是 1 到 100 之间的数字')
+  }
+  const quality = numericQuality == null ? null : Math.max(1, Math.min(100, Math.round(numericQuality)))
+
+  const image = { ...base.image }
+  const video = { ...base.video }
+  if (quality != null && preset !== 'lossless') {
+    image.quality = quality
+    image.avifQuality = Math.max(1, quality - 20)
+    // 保持旧 quality API 的视频画质曲线，预设仅补充分辨率、速度与音频参数。
+    video.h264Crf = Math.max(18, Math.min(34, Math.round(40 - quality * 0.25)))
+    video.vp9Crf = Math.max(24, Math.min(45, video.h264Crf + 6))
+  }
+
+  return {
+    preset,
+    label: base.label,
+    image,
+    png: { ...base.png },
+    svg: { ...base.svg },
+    gif: { ...base.gif },
+    video,
+    mp3: { ...base.mp3 },
+    qualityOverride: quality,
+  }
+}
+
 export function classifyPath(filePath) {
   const extension = extname(filePath).toLowerCase()
   if (STATIC_IMAGE_EXTENSIONS.has(extension)) return 'image'
@@ -150,54 +230,120 @@ function runFfmpeg(binary, args) {
   })
 }
 
-async function compressStaticImage(inputPath, outputPath, format, quality) {
+async function compressStaticImage(inputPath, outputPath, format, settings) {
   if (format === 'svg') {
     const source = await readFile(inputPath, 'utf8')
+    const overrides = settings.svg.preserveGeometry
+      ? {
+          cleanupNumericValues: false,
+          convertPathData: false,
+          convertTransform: false,
+          mergePaths: false,
+        }
+      : {
+          cleanupNumericValues: { floatPrecision: settings.svg.floatPrecision },
+          convertPathData: { floatPrecision: settings.svg.floatPrecision },
+          convertTransform: { floatPrecision: settings.svg.floatPrecision },
+        }
     const result = optimize(source, {
       path: inputPath,
-      multipass: true,
-      plugins: ['preset-default', 'removeScripts'],
+      multipass: settings.svg.multipass,
+      plugins: [
+        { name: 'preset-default', params: { overrides } },
+        'removeScripts',
+      ],
     })
     await writeFile(outputPath, result.data)
     return
   }
 
   let pipeline = sharp(inputPath, { failOn: 'none', limitInputPixels: 268_402_689 }).rotate()
-  if (format === 'jpeg') pipeline = pipeline.flatten({ background: '#ffffff' }).jpeg({ quality, mozjpeg: true })
-  else if (format === 'png') pipeline = pipeline.png({ compressionLevel: 9, effort: 10 })
-  else if (format === 'webp') pipeline = pipeline.webp({ quality, effort: 6, smartSubsample: true })
-  else if (format === 'avif') pipeline = pipeline.avif({ quality: Math.max(30, quality - 20), effort: 7 })
+  if (settings.image.maxDimension) {
+    pipeline = pipeline.resize({
+      width: settings.image.maxDimension,
+      height: settings.image.maxDimension,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+  }
+  if (format === 'jpeg') {
+    pipeline = pipeline.flatten({ background: '#ffffff' }).jpeg({
+      quality: settings.image.quality,
+      mozjpeg: true,
+      chromaSubsampling: settings.image.lossless ? '4:4:4' : '4:2:0',
+    })
+  } else if (format === 'png') {
+    pipeline = pipeline.png(settings.png)
+  } else if (format === 'webp') {
+    pipeline = pipeline.webp(settings.image.lossless
+      ? { lossless: true, effort: settings.image.effort }
+      : { quality: settings.image.quality, effort: settings.image.effort, smartSubsample: true })
+  } else if (format === 'avif') {
+    pipeline = pipeline.avif(settings.image.lossless
+      ? { lossless: true, effort: settings.image.effort }
+      : { quality: settings.image.avifQuality, effort: settings.image.effort })
+  }
   else throw new Error(`图片不支持输出为 ${format}`)
   await pipeline.toFile(outputPath)
 }
 
-async function compressGif(inputPath, outputPath, ffmpegPath) {
+async function compressGif(inputPath, outputPath, ffmpegPath, settings) {
+  if (settings.gif.copy) {
+    await copyFile(inputPath, outputPath)
+    return
+  }
+  const paletteUse = settings.gif.dither === 'bayer'
+    ? 'paletteuse=dither=bayer:bayer_scale=3'
+    : 'paletteuse=dither=none'
   await runFfmpeg(ffmpegPath, [
     '-i', inputPath,
-    '-filter_complex', "fps=12,scale='min(960,iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer",
+    '-filter_complex', `fps=${settings.gif.fps},scale='min(${settings.gif.maxWidth},iw)':-2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=${settings.gif.maxColors}[p];[s1][p]${paletteUse}`,
     '-loop', '0',
     outputPath,
   ])
 }
 
-async function compressVideo(inputPath, outputPath, format, quality, ffmpegPath) {
+async function compressVideo(inputPath, outputPath, format, ffmpegPath, settings) {
   if (format === 'mp3') {
-    await runFfmpeg(ffmpegPath, ['-i', inputPath, '-vn', '-c:a', 'libmp3lame', '-b:a', '160k', outputPath])
+    await runFfmpeg(ffmpegPath, [
+      '-i', inputPath,
+      '-vn', '-map', '0:a:0',
+      '-c:a', 'libmp3lame', '-b:a', settings.mp3.bitrate,
+      outputPath,
+    ])
     return
   }
 
-  const crf = String(Math.max(18, Math.min(34, Math.round(40 - quality * 0.25))))
+  if (settings.video.copy) {
+    await runFfmpeg(ffmpegPath, [
+      '-i', inputPath,
+      '-map', '0', '-c', 'copy',
+      ...(extname(outputPath).toLowerCase() === '.mp4' ? ['-movflags', '+faststart'] : []),
+      outputPath,
+    ])
+    return
+  }
+
   const extension = extname(outputPath).toLowerCase()
   if (extension === '.webm') {
     await runFfmpeg(ffmpegPath, [
-      '-i', inputPath, '-vf', "scale=-2:'min(720,ih)'", '-c:v', 'libvpx-vp9', '-crf', crf,
-      '-b:v', '0', '-c:a', 'libopus', '-b:a', '128k', outputPath,
+      '-i', inputPath,
+      '-vf', `scale=-2:'min(${settings.video.maxHeight},ih)'`,
+      '-c:v', 'libvpx-vp9', '-crf', String(settings.video.vp9Crf), '-b:v', '0',
+      '-deadline', 'good', '-cpu-used', String(settings.video.vp9CpuUsed),
+      '-c:a', 'libopus', '-b:a', settings.video.audioBitrate,
+      outputPath,
     ])
     return
   }
   await runFfmpeg(ffmpegPath, [
-    '-i', inputPath, '-vf', "scale=-2:'min(720,ih)'", '-c:v', 'libx264', '-preset', 'medium',
-    '-crf', crf, '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', outputPath,
+    '-i', inputPath,
+    '-vf', `scale=-2:'min(${settings.video.maxHeight},ih)'`,
+    '-c:v', 'libx264', '-preset', settings.video.h264Preset,
+    '-crf', String(settings.video.h264Crf), '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', settings.video.audioBitrate,
+    '-movflags', '+faststart',
+    outputPath,
   ])
 }
 
@@ -223,7 +369,7 @@ export async function compressFile(input, options = {}) {
   if (!kind) throw new Error(`不支持的格式：${extname(inputPath) || basename(inputPath)}`)
 
   const requestedFormat = normalizedFormat(options.format ?? 'original')
-  const quality = options.quality ?? 80
+  const settings = resolveCompressionSettings(options)
   const sourceInfo = await stat(inputPath)
   const parsed = parse(inputPath)
   const targetExtension = extensionFor(kind, inputPath, requestedFormat)
@@ -231,7 +377,11 @@ export async function compressFile(input, options = {}) {
   await mkdir(outputDirectory, { recursive: true })
 
   let targetPath
-  if (options.replace) targetPath = join(parsed.dir, `${parsed.name}${targetExtension}`)
+  if (options.replace) {
+    targetPath = targetExtension.toLowerCase() === extname(inputPath).toLowerCase()
+      ? inputPath
+      : join(parsed.dir, `${parsed.name}${targetExtension}`)
+  }
   else targetPath = await uniqueOutputPath(outputDirectory, parsed.name, targetExtension)
   const temporaryPath = join(dirname(targetPath), `.${basename(targetPath)}.compreesor-${randomUUID()}${targetExtension}`)
 
@@ -244,15 +394,24 @@ export async function compressFile(input, options = {}) {
       if (format === 'svg' && extname(inputPath).toLowerCase() !== '.svg') {
         throw new Error('位图不能转换为 SVG')
       }
-      await compressStaticImage(inputPath, temporaryPath, format, quality)
+      if (settings.preset === 'lossless' && format === 'jpeg' && targetExtension === extname(inputPath).toLowerCase()) {
+        await copyFile(inputPath, temporaryPath)
+      } else {
+        await compressStaticImage(inputPath, temporaryPath, format, settings)
+      }
     } else {
-      const ffmpegPath = await resolveFfmpeg(options.ffmpegPath)
       if (kind === 'gif') {
         if (!['original', 'gif'].includes(requestedFormat)) throw new Error(`GIF 不能输出为 ${requestedFormat}`)
-        await compressGif(inputPath, temporaryPath, ffmpegPath)
+        const ffmpegPath = settings.gif.copy ? null : await resolveFfmpeg(options.ffmpegPath)
+        await compressGif(inputPath, temporaryPath, ffmpegPath, settings)
       } else {
         if (!['original', 'mp4', 'mov', 'mp3'].includes(requestedFormat)) throw new Error(`视频不能输出为 ${requestedFormat}`)
-        await compressVideo(inputPath, temporaryPath, requestedFormat, quality, ffmpegPath)
+        if (settings.video.copy && requestedFormat === 'original') {
+          await copyFile(inputPath, temporaryPath)
+        } else {
+          const ffmpegPath = await resolveFfmpeg(options.ffmpegPath)
+          await compressVideo(inputPath, temporaryPath, requestedFormat, ffmpegPath, settings)
+        }
       }
     }
 

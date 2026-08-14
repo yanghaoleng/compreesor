@@ -1,6 +1,8 @@
 # Compreesor Desktop
 
-小窗口 Electron 图片压缩器。先选择输出格式与质量，拖入图片后会自动处理，并在成功后直接替换原文件。转换格式时，新文件仍位于原目录，但扩展名会同步更改。
+Electron 版本直接打包并运行与线上版相同的 Vite 界面，因此布局、打赏、CLI 说明、作者主页、多语言、明暗模式和文件列表行为共用一份实现。
+
+桌面桥提供原生压缩和安全替换：成功后直接替换原文件；转换格式时，新文件仍位于原目录并同步更改扩展名。写入使用同目录临时文件与回滚备份，只有新文件完整写入后才移除源文件；若转换后的目标路径已有文件，则拒绝覆盖。
 
 ## 开发
 
@@ -9,10 +11,14 @@ npm install
 npm start
 ```
 
+`npm start` 会先把根目录网页以相对资源路径构建到 `web-dist`，再打开 Electron 窗口。
+
 ## 构建 macOS 安装包
 
 ```bash
 npm run dist
 ```
 
-桌面端复用 `compreesor-cli` 的压缩核心，并通过临时文件和回滚备份完成替换：只有新文件写入成功后才移除源文件。
+桌面端图片与 SVG 复用 `compreesor-cli` 的原生压缩核心；GIF、视频、MP3 和透明 MOV 复用网页自带的 ffmpeg.wasm，再通过桌面桥原子替换源文件。因此安装包不依赖系统 FFmpeg，也不分发含 nonfree 组件的第三方原生 FFmpeg 二进制。
+
+网页静态文件由受限的 `compreesor://app/` 协议提供，只能读取应用内 `web` 目录，同时保持 Electron `webSecurity` 开启。`bridge.d.ts` 记录了网页接入时可使用的 `window.compreesorDesktop` API。

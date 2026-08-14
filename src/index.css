@@ -49,6 +49,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
   background:
     linear-gradient(180deg, rgba(211, 241, 255, 0.34), rgba(255, 255, 255, 0) 390px),
     var(--page);

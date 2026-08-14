@@ -19,15 +19,18 @@ program
   .addOption(new Option('-f, --format <format>', '输出格式').choices([
     'original', 'jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'mp4', 'mov', 'mp3',
   ]).default('original'))
-  .option('-q, --quality <number>', '质量 1-100', '80')
+  .addOption(new Option('-p, --preset <preset>', '质量预设：极限 / 够用 / 无损').choices([
+    'extreme', 'balanced', 'lossless', '极限', '够用', '无损',
+  ]).default('balanced'))
+  .option('-q, --quality <number>', '兼容旧用法：质量 1-100，并覆盖预设中的图片/视频画质')
   .option('-o, --output <directory>', '输出目录；默认写在源文件旁边')
   .option('-r, --replace', '成功后替换原文件')
   .option('-y, --yes', '跳过替换确认')
   .option('--no-recursive', '不递归查找子目录')
   .option('--ffmpeg <path>', '指定 FFmpeg 可执行文件')
   .action(async (inputs, options) => {
-    const quality = Number.parseInt(options.quality, 10)
-    if (!Number.isInteger(quality) || quality < 1 || quality > 100) {
+    const quality = options.quality == null ? undefined : Number.parseInt(options.quality, 10)
+    if (quality != null && (!Number.isInteger(quality) || quality < 1 || quality > 100)) {
       program.error('--quality 必须是 1 到 100 之间的整数')
     }
 
@@ -61,6 +64,7 @@ program
       try {
         const result = await compressFile(file, {
           format: options.format,
+          preset: options.preset,
           quality,
           outputDirectory: options.output,
           replace: Boolean(options.replace),

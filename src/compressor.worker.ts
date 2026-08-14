@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import type {
+  CompressionPreset,
   ImageFormat,
   WorkerRequest,
   WorkerResponse,
@@ -121,7 +122,13 @@ function flattenTransparency(image: ImageData) {
   return new ImageData(data, image.width, image.height)
 }
 
-async function encode(image: ImageData, format: ImageFormat, quality: number) {
+async function encode(
+  image: ImageData,
+  format: ImageFormat,
+  quality: number,
+  preset: CompressionPreset,
+) {
+  const lossless = preset === 'lossless'
   switch (format) {
     case 'jpeg': {
       const { encode: encodeJpeg } = await import('@jsquash/jpeg')
@@ -139,37 +146,39 @@ async function encode(image: ImageData, format: ImageFormat, quality: number) {
       const { encode: encodeWebp } = await import('@jsquash/webp')
       return encodeWebp(image, {
         quality,
-        method: 6,
-        pass: 6,
+        method: lossless ? 6 : preset === 'extreme' ? 5 : 4,
+        pass: lossless ? 2 : preset === 'extreme' ? 4 : 2,
         use_sharp_yuv: 1,
         alpha_quality: 100,
+        lossless: lossless ? 1 : 0,
+        exact: lossless ? 1 : 0,
       })
     }
     case 'avif': {
       const { encode: encodeAvif } = await import('@jsquash/avif')
       return encodeAvif(image, {
         quality,
-        qualityAlpha: -1,
-        speed: 4,
+        qualityAlpha: lossless ? 100 : -1,
+        speed: lossless ? 4 : preset === 'extreme' ? 5 : 6,
         bitDepth: 8,
-        subsample: 1,
+        subsample: lossless ? 3 : 1,
         tune: 0,
-        lossless: false,
+        lossless,
       })
     }
     case 'jxl': {
       const { encode: encodeJxl } = await import('@jsquash/jxl')
       return encodeJxl(image, {
         quality,
-        effort: 7,
+        effort: lossless ? 8 : preset === 'extreme' ? 7 : 6,
         progressive: false,
-        lossless: false,
+        lossless,
       })
     }
     case 'png': {
       const { optimise } = await import('@jsquash/oxipng')
       return optimise(image, {
-        level: 4,
+        level: preset === 'balanced' ? 4 : 6,
         interlace: false,
         optimiseAlpha: true,
       })
@@ -183,13 +192,14 @@ async function encodeToTarget(
   format: ImageFormat,
   maxQuality: number,
   targetBytes: number,
+  preset: CompressionPreset,
 ): Promise<EncodedResult> {
   let working = initialImage
   let smallest: EncodedResult | null = null
 
   for (let scaleAttempt = 0; scaleAttempt < 4; scaleAttempt += 1) {
     if (format === 'png') {
-      const buffer = await encode(working, format, maxQuality)
+      const buffer = await encode(working, format, maxQuality, preset)
       smallest = { buffer, image: working, quality: null }
       if (buffer.byteLength <= targetBytes) return smallest
     } else {
@@ -201,7 +211,7 @@ async function encodeToTarget(
       for (let iteration = 0; iteration < 7 && low <= high; iteration += 1) {
         const quality = Math.round((low + high) / 2)
         report(jobId, 35 + scaleAttempt * 12 + iteration * 1.5, `正在逼近目标体积，画质 ${quality}%`)
-        const buffer = await encode(working, format, quality)
+        const buffer = await encode(working, format, quality, preset)
         const candidate = { buffer, image: working, quality }
         if (!localSmallest || buffer.byteLength < localSmallest.buffer.byteLength) localSmallest = candidate
 
@@ -228,7 +238,7 @@ async function encodeToTarget(
   }
 
   if (!smallest) {
-    const buffer = await encode(working, format, Math.max(12, Math.min(maxQuality, 30)))
+    const buffer = await encode(working, format, Math.max(12, Math.min(maxQuality, 30)), preset)
     smallest = { buffer, image: working, quality: format === 'png' ? null : 30 }
   }
   return smallest
@@ -257,10 +267,11 @@ async function compress(request: WorkerRequest) {
       settings.outputFormat,
       settings.quality,
       settings.targetBytes,
+      settings.preset,
     )
   } else {
     report(jobId, 48, `正在编码 ${settings.outputFormat.toUpperCase()}`)
-    const outputBuffer = await encode(image, settings.outputFormat, settings.quality)
+    const outputBuffer = await encode(image, settings.outputFormat, settings.quality, settings.preset)
     result = {
       buffer: outputBuffer,
       image,

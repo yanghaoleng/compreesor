@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { inject } from '@vercel/analytics'
 import './index.css'
 import App from './App.tsx'
 
@@ -13,6 +14,8 @@ try {
 } catch {
   document.documentElement.dataset.theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
+
+if (!window.compreesorDesktop?.isDesktop) inject()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

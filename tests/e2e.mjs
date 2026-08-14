@@ -15,8 +15,12 @@ page.on('console', (message) => {
 
 await page.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await page.getByRole('heading', { name: '输出偏好' }).waitFor()
-if ((await page.locator('.preferences select').count()) !== 2) throw new Error('Output preferences are missing before upload')
-if (await page.locator('.preferences select').nth(1).inputValue() !== 'mp3') throw new Error('Video output should default to MP3 extraction')
+if ((await page.locator('.preferences select').count()) !== 3) throw new Error('Output preferences or compression preset are missing before upload')
+if (await page.locator('.preferences select').nth(0).inputValue() !== 'balanced') throw new Error('Compression should default to Balanced')
+if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
+  throw new Error('Original image output copy is incorrect')
+}
+if (await page.locator('.preferences select').nth(2).inputValue() !== 'mp3') throw new Error('Video output should default to MP3 extraction')
 const preferenceHeadingBox = await page.getByRole('heading', { name: '输出偏好' }).boundingBox()
 const firstPreferenceBox = await page.locator('.preferences label').first().boundingBox()
 if (!preferenceHeadingBox || !firstPreferenceBox || firstPreferenceBox.x - (preferenceHeadingBox.x + preferenceHeadingBox.width) > 28) {
@@ -58,6 +62,8 @@ if ((await page.locator('.thumbnail img').count()) !== 3) throw new Error('Expec
 const firstThumbnail = await page.locator('.thumbnail').first().boundingBox()
 if (!firstThumbnail || firstThumbnail.width > 44 || firstThumbnail.height > 44) throw new Error('Thumbnails are not compact')
 if (!(await page.locator('.job-copy p').first().innerText()).includes('→')) throw new Error('Compression details should show original and result sizes')
+if ((await page.locator('.job-progress').count()) !== 3) throw new Error('Every file should expose a progress bar')
+if (await page.locator('.job-progress').first().getAttribute('aria-valuenow') !== '100') throw new Error('Completed progress should reach 100')
 if (!/^\d+%$/.test((await page.locator('.job-row').first().locator('.job-state').innerText()).trim())) {
   throw new Error('Image result ratio is missing beside the green check')
 }
@@ -185,6 +191,9 @@ await mobile.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixtur
 await mobile.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 1, undefined, { timeout: 180_000 })
 const mobileListWidth = await mobile.evaluate(() => document.body.scrollWidth)
 if (mobileListWidth > 390) throw new Error(`Mobile list layout overflows: ${mobileListWidth}px`)
+if (await mobile.locator('.job-progress').first().evaluate((element) => getComputedStyle(element).display) !== 'none') {
+  throw new Error('Progress bar should hide when mobile space is limited')
+}
 const mobileDonateTrigger = mobile.getByRole('button', { name: '打赏作者' })
 await mobileDonateTrigger.click()
 await mobile.locator('.donate-popover').waitFor()
@@ -205,6 +214,7 @@ await mobile.getByRole('heading', { name: 'Output preferences' }).waitFor()
 const themeBefore = await mobile.evaluate(() => document.documentElement.dataset.theme)
 await mobile.locator('.topbar-actions > .icon-button').click()
 if (await mobile.evaluate(() => document.documentElement.dataset.theme) === themeBefore) throw new Error('Theme did not toggle')
+await mobile.waitForTimeout(250)
 await mobile.screenshot({ path: '/tmp/compreesor-mobile-dark.png', fullPage: true })
 
 const guidePage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
@@ -212,6 +222,12 @@ await guidePage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkid
 await guidePage.getByRole('button', { name: '使用说明' }).click()
 await guidePage.getByRole('dialog').waitFor()
 await guidePage.getByRole('link', { name: '作者主页' }).waitFor()
+await guidePage.getByRole('button', { name: '关闭使用说明' }).click()
+await guidePage.getByRole('button', { name: 'CLI 命令行' }).click()
+await guidePage.getByRole('dialog', { name: '安装 CLI 批量压缩' }).waitFor()
+await guidePage.getByRole('button', { name: '复制安装命令' }).click()
+await guidePage.getByText('已复制安装命令', { exact: true }).waitFor()
+if (!(await guidePage.getByRole('dialog').innerText()).includes('--preset extreme')) throw new Error('CLI preset instructions are missing')
 
 const dropPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await dropPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
@@ -231,10 +247,10 @@ await dropPage.waitForFunction(() => document.querySelectorAll('.job-row.status-
 
 const audioPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await audioPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-if (!(await audioPage.locator('.preferences select').nth(1).locator('option[value="mp3"]').innerText()).includes('提取 MP3')) {
+if (!(await audioPage.locator('.preferences select').nth(2).locator('option[value="mp3"]').innerText()).includes('提取 MP3')) {
   throw new Error('MP3 option label is incorrect')
 }
-await audioPage.locator('.preferences select').nth(1).selectOption('mp3')
+await audioPage.locator('.preferences select').nth(2).selectOption('mp3')
 if (await audioPage.locator('.alpha-switch').count()) throw new Error('Alpha switch should be removed')
 await audioPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-video.mp4')
 await audioPage.waitForFunction(
@@ -259,7 +275,7 @@ if (extractedAudio.suggestedFilename() !== 'compreesor-video-压缩.mp3') {
 
 const alphaPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await alphaPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-await alphaPage.locator('.preferences select').nth(1).selectOption('mov-alpha')
+await alphaPage.locator('.preferences select').nth(2).selectOption('mov-alpha')
 await alphaPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-alpha.mov')
 await alphaPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
@@ -280,7 +296,8 @@ if (alphaVideo.suggestedFilename() !== 'compreesor-alpha-压缩.mov') {
 
 const jpegPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await jpegPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-await jpegPage.locator('.preferences select').first().selectOption('jpeg')
+await jpegPage.locator('.preferences select').nth(0).selectOption('extreme')
+await jpegPage.locator('.preferences select').nth(1).selectOption('jpeg')
 await jpegPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
 await jpegPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
@@ -341,7 +358,7 @@ await svgPage.screenshot({ path: '/tmp/compreesor-svg.png', fullPage: true })
 
 const svgPngPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await svgPngPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-await svgPngPage.locator('.preferences select').first().selectOption('png')
+await svgPngPage.locator('.preferences select').nth(1).selectOption('png')
 await svgPngPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
 await svgPngPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,

@@ -1,6 +1,6 @@
 {
   "name": "compreesor-desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Compreesor desktop app for drag-and-drop image compression and conversion.",
   "type": "module",
   "main": "main.js",
@@ -8,8 +8,10 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "dist": "electron-builder --mac dmg zip"
+    "web:build": "npm --prefix ../.. run build -- --base=./ --outDir apps/desktop/web-dist --emptyOutDir",
+    "start": "npm run web:build && electron .",
+    "test": "node test/native-files.test.mjs",
+    "dist": "npm run web:build && electron-builder --mac dmg zip"
   },
   "dependencies": {
     "compreesor-cli": "file:../../packages/cli"
@@ -27,13 +29,23 @@
     },
     "files": [
       "main.js",
+      "native-files.js",
       "preload.cjs",
+      "web-protocol.js",
       "renderer/**/*",
       "package.json",
       "node_modules/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "web-dist",
+        "to": "web"
+      }
+    ],
     "mac": {
       "category": "public.app-category.graphics-design",
+      "identity": "-",
+      "hardenedRuntime": false,
       "target": [
         "dmg",
         "zip"

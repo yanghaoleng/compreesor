@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle,
   ChatCircle,
+  CopySimple,
   DownloadSimple,
   Eye,
   FileImage,
@@ -29,17 +30,23 @@ import { zip } from 'fflate'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import {
+  DEFAULT_COMPRESSION_PRESET,
+  IMAGE_PRESET_SETTINGS,
+} from './compressionPresets'
+import {
   compressGif,
   compressVideo,
   disposeMediaEngine,
   type VideoOutputPreference,
 } from './mediaCompressor'
 import type {
+  CompressionPreset,
   CompressionSettings,
   WorkerRequest,
   WorkerResponse,
   WorkerSuccess,
 } from './types'
+import type { DesktopNativeFormat } from './desktop'
 import {
   getInitialLocale,
   getInitialTheme,
@@ -57,6 +64,7 @@ type JobStatus = 'queued' | 'processing' | 'done' | 'error'
 type ImageOutputPreference = 'original' | 'jpeg' | 'webp' | 'png'
 
 type JobPreferences = {
+  compressionPreset: CompressionPreset
   imageOutput: ImageOutputPreference
   videoOutput: VideoOutputPreference
 }
@@ -66,12 +74,14 @@ type MediaJob = {
   file: File
   kind: JobKind
   preferences: JobPreferences
+  sourcePath: string | null
   originalUrl: string
   thumbnailUrl: string | null
   resultBlob: Blob | null
   resultUrl: string | null
   outputName: string | null
   outputLabel: string | null
+  resultPath: string | null
   status: JobStatus
   progress: number
   stage: string
@@ -82,6 +92,9 @@ type ProcessedFile = {
   blob: Blob
   outputName: string
   outputLabel: string
+  resultPath?: string
+  unchanged?: boolean
+  savedInPlace?: boolean
 }
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.avif', '.jxl', '.svg']
@@ -97,6 +110,7 @@ const FORMAT_LABELS = {
   jxl: 'JXL',
 } as const
 const AUTHOR_HOME_URL = 'https://mikeywa.icu/'
+const CLI_INSTALL_COMMAND = 'npm install -g compreesor-cli'
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -147,6 +161,36 @@ function imageOutputExtension(file: File, format: CompressionSettings['outputFor
   return format === 'jpeg' ? 'jpg' : format
 }
 
+function desktopFormatForJob(job: MediaJob): DesktopNativeFormat | null {
+  if (job.kind === 'gif') return 'gif'
+  if (job.kind === 'video') {
+    if (job.preferences.videoOutput === 'mov-alpha') return null
+    return job.preferences.videoOutput
+  }
+  if (job.preferences.imageOutput === 'original') return 'original'
+  return job.preferences.imageOutput === 'jpeg' ? 'jpg' : job.preferences.imageOutput
+}
+
+function outputLabelFromName(name: string) {
+  const extension = extensionOf(name)
+  if (extension === 'jpg' || extension === 'jpeg') return 'JPEG'
+  if (extension === 'webp') return 'WebP'
+  if (extension === 'png') return 'PNG'
+  if (extension === 'avif') return 'AVIF'
+  if (extension === 'jxl') return 'JXL'
+  if (extension === 'svg') return 'SVG'
+  if (extension === 'gif') return 'GIF'
+  if (extension === 'mp3') return 'MP3'
+  if (extension === 'mov') return 'MOV'
+  return extension.toUpperCase() || 'FILE'
+}
+
+function blobFromDesktopData(data: Uint8Array, mimeType: string) {
+  const bytes = new Uint8Array(data.byteLength)
+  bytes.set(data)
+  return new Blob([bytes.buffer], { type: mimeType })
+}
+
 function classifyFile(file: File): JobKind | null {
   const lowerName = file.name.toLowerCase()
   if (file.type === 'image/gif' || lowerName.endsWith('.gif')) return 'gif'
@@ -181,15 +225,40 @@ function sanitizeSvg(source: string) {
   return new XMLSerializer().serializeToString(document.documentElement)
 }
 
-async function optimizeSvg(file: File, onProgress: (progress: number, stage: string) => void) {
+async function optimizeSvg(
+  file: File,
+  preset: CompressionPreset,
+  onProgress: (progress: number, stage: string) => void,
+) {
   onProgress(8, '正在读取 SVG')
   const safeSource = sanitizeSvg(await file.text())
   onProgress(34, '正在优化矢量路径')
   const { optimize } = await import('svgo/browser')
+  const preserveGeometry = preset === 'lossless'
+  const floatPrecision = preset === 'extreme' ? 2 : 3
   const result = optimize(safeSource, {
     path: file.name,
     multipass: true,
-    plugins: ['preset-default', 'removeScripts'],
+    plugins: [
+      {
+        name: 'preset-default',
+        params: {
+          overrides: preserveGeometry
+            ? {
+                cleanupNumericValues: false,
+                convertPathData: false,
+                convertTransform: false,
+                mergePaths: false,
+              }
+            : {
+                cleanupNumericValues: { floatPrecision },
+                convertPathData: { floatPrecision },
+                convertTransform: { floatPrecision },
+              },
+        },
+      },
+      'removeScripts',
+    ],
   })
   onProgress(72, '正在整理 SVG 结构')
   return result.data
@@ -342,18 +411,40 @@ function download(url: string, name: string) {
   anchor.remove()
 }
 
+async function copyText(value: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  textarea.remove()
+  if (!copied) throw new Error('Copy command failed')
+}
+
 type PreferencesProps = {
   messages: Messages
+  compressionPreset: CompressionPreset
   imageOutput: ImageOutputPreference
   videoOutput: VideoOutputPreference
+  onCompressionPresetChange: (value: CompressionPreset) => void
   onImageOutputChange: (value: ImageOutputPreference) => void
   onVideoOutputChange: (value: VideoOutputPreference) => void
 }
 
 function Preferences({
   messages,
+  compressionPreset,
   imageOutput,
   videoOutput,
+  onCompressionPresetChange,
   onImageOutputChange,
   onVideoOutputChange,
 }: PreferencesProps) {
@@ -361,9 +452,17 @@ function Preferences({
     <section className="preferences" aria-labelledby="page-title">
       <h1 id="page-title">{messages.outputPreferences}</h1>
       <label>
+        <span>{messages.compressionLevel}</span>
+        <select value={compressionPreset} onChange={(event) => onCompressionPresetChange(event.target.value as CompressionPreset)}>
+          <option value="extreme">{messages.extreme}</option>
+          <option value="balanced">{messages.balanced}</option>
+          <option value="lossless">{messages.lossless}</option>
+        </select>
+      </label>
+      <label>
         <span>{messages.image}</span>
         <select value={imageOutput} onChange={(event) => onImageOutputChange(event.target.value as ImageOutputPreference)}>
-          <option value="original">{messages.original}</option>
+          <option value="original">{messages.imageOriginal}</option>
           <option value="jpeg">{messages.jpg}</option>
           <option value="webp">{messages.webp}</option>
           <option value="png">{messages.png}</option>
@@ -393,10 +492,12 @@ function App() {
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [usageGuideOpen, setUsageGuideOpen] = useState(false)
   const [cliGuideOpen, setCliGuideOpen] = useState(false)
+  const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [previewJobId, setPreviewJobId] = useState<string | null>(null)
   const [donateMethod, setDonateMethod] = useState<'wechat' | 'alipay'>('wechat')
   const [donatePanelState, setDonatePanelState] = useState<'closed' | 'open' | 'closing'>('closed')
   const [donatePanelPinned, setDonatePanelPinned] = useState(false)
+  const [compressionPreset, setCompressionPreset] = useState<CompressionPreset>(DEFAULT_COMPRESSION_PRESET)
   const [imageOutput, setImageOutput] = useState<ImageOutputPreference>('original')
   const [videoOutput, setVideoOutput] = useState<VideoOutputPreference>('mp3')
   const workerPoolRef = useRef<Worker[]>([])
@@ -411,8 +512,27 @@ function App() {
   const donateTriggerRef = useRef<HTMLButtonElement>(null)
   const usageGuideCloseRef = useRef<HTMLButtonElement>(null)
   const cliGuideCloseRef = useRef<HTMLButtonElement>(null)
+  const toastTimerRef = useRef<number | null>(null)
   const messages = I18N[locale]
   const currentLanguage = LANGUAGE_OPTIONS.find((option) => option.id === locale) ?? LANGUAGE_OPTIONS[0]
+
+  const showToast = useCallback((message: string, tone: 'success' | 'error') => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
+    setToast({ message, tone })
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null)
+      toastTimerRef.current = null
+    }, 2200)
+  }, [])
+
+  const copyCliInstallCommand = useCallback(async () => {
+    try {
+      await copyText(CLI_INSTALL_COMMAND)
+      showToast(messages.commandCopied, 'success')
+    } catch {
+      showToast(messages.copyFailed, 'error')
+    }
+  }, [messages.commandCopied, messages.copyFailed, showToast])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -493,22 +613,21 @@ function App() {
       setDonatePanelPinned(false)
       return undefined
     }
-    const updatePlacement = () => {
-      setDonatePanelPinned(!isElementInViewport(donateTriggerRef.current))
-    }
-    updatePlacement()
-    window.addEventListener('scroll', updatePlacement, { passive: true })
-    window.addEventListener('resize', updatePlacement)
-    return () => {
-      window.removeEventListener('scroll', updatePlacement)
-      window.removeEventListener('resize', updatePlacement)
-    }
+    const trigger = donateTriggerRef.current
+    if (!trigger) return undefined
+    const observer = new IntersectionObserver(
+      ([entry]) => setDonatePanelPinned(!entry?.isIntersecting),
+      { threshold: 0.01 },
+    )
+    observer.observe(trigger)
+    return () => observer.disconnect()
   }, [donatePanelState])
 
   useEffect(() => {
     const urls = urlsRef.current
     const workers = workerPoolRef.current
     return () => {
+      if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
       workers.forEach((worker) => worker.terminate())
       disposeMediaEngine()
       urls.forEach((url) => URL.revokeObjectURL(url))
@@ -544,7 +663,7 @@ function App() {
     async (job: MediaJob) => {
       let buffer: ArrayBuffer
       if (isSvgFile(job.file)) {
-        const svg = await optimizeSvg(job.file, (progress, stage) => {
+        const svg = await optimizeSvg(job.file, job.preferences.compressionPreset, (progress, stage) => {
           updateJob(job.id, { progress, stage })
         })
         if (job.preferences.imageOutput === 'original') {
@@ -563,11 +682,25 @@ function App() {
       const outputFormat = job.preferences.imageOutput === 'original'
         ? originalImageFormat(job.file)
         : job.preferences.imageOutput
+      if (
+        job.preferences.compressionPreset === 'lossless'
+        && job.preferences.imageOutput === 'original'
+        && outputFormat === 'jpeg'
+      ) {
+        updateJob(job.id, { progress: 96, stage: '已保留原始 JPEG' })
+        return {
+          blob: job.file,
+          outputName: `${baseName(job.file.name)}-压缩.${imageOutputExtension(job.file, outputFormat, job.preferences.imageOutput)}`,
+          outputLabel: FORMAT_LABELS[outputFormat],
+        }
+      }
+      const presetSettings = IMAGE_PRESET_SETTINGS[job.preferences.compressionPreset]
       const settings: CompressionSettings = {
         outputFormat,
-        quality: 80,
+        preset: job.preferences.compressionPreset,
+        quality: presetSettings.quality,
         targetBytes: null,
-        maxDimension: 2560,
+        maxDimension: presetSettings.maxDimension,
       }
       const result = await new Promise<WorkerSuccess>((resolve, reject) => {
         const worker = ensureWorker()
@@ -610,11 +743,39 @@ function App() {
         updateJob(job.id, { progress: Math.max(1, Math.min(99, Math.round(progress))), stage })
       }
 
+      const desktop = window.compreesorDesktop
+      const desktopFormat = desktopFormatForJob(job)
+      const inputExtension = extensionOf(job.file.name)
+      if (
+        desktop
+        && job.sourcePath
+        && desktopFormat
+        && desktop.capabilities.nativeInputExtensions.includes(inputExtension)
+        && desktop.capabilities.nativeOutputFormats.includes(desktopFormat)
+      ) {
+        onProgress(12, '正在使用桌面压缩引擎')
+        const nativeResult = await desktop.compressFile({
+          path: job.sourcePath,
+          format: desktopFormat,
+          preset: job.preferences.compressionPreset,
+        })
+        onProgress(88, '正在读取替换结果')
+        const resultFile = await desktop.readResultFile(nativeResult.outputPath)
+        return {
+          blob: blobFromDesktopData(resultFile.data, resultFile.mimeType),
+          outputName: nativeResult.outputName,
+          outputLabel: outputLabelFromName(nativeResult.outputName),
+          resultPath: nativeResult.outputPath,
+          unchanged: nativeResult.unchanged,
+          savedInPlace: true,
+        }
+      }
+
       let processed: ProcessedFile
       if (job.kind === 'image') {
         processed = await compressImage(job)
       } else if (job.kind === 'gif') {
-        const blob = await compressGif(job.file, job.id, onProgress)
+        const blob = await compressGif(job.file, job.id, job.preferences.compressionPreset, onProgress)
         processed = {
           blob,
           outputName: `${baseName(job.file.name)}-压缩.gif`,
@@ -625,6 +786,7 @@ function App() {
           job.file,
           job.id,
           job.preferences.videoOutput,
+          job.preferences.compressionPreset,
           onProgress,
         )
         processed = {
@@ -637,12 +799,41 @@ function App() {
       const mayKeepOriginal = job.kind === 'gif'
         || (job.kind === 'image' && job.preferences.imageOutput === 'original')
         || (job.kind === 'video' && job.preferences.videoOutput === 'original')
-      if (!mayKeepOriginal || processed.blob.size < job.file.size) return processed
-      const originalExtension = extensionOf(job.file.name) || (job.kind === 'gif' ? 'gif' : 'bin')
+      if (mayKeepOriginal && processed.blob.size >= job.file.size) {
+        const originalExtension = extensionOf(job.file.name) || (job.kind === 'gif' ? 'gif' : 'bin')
+        processed = {
+          blob: job.file,
+          outputName: `${baseName(job.file.name)}-压缩.${originalExtension}`,
+          outputLabel: '保持原格式',
+          unchanged: true,
+        }
+      }
+
+      if (!desktop || !job.sourcePath) return processed
+      if (processed.blob === job.file) {
+        return {
+          ...processed,
+          outputName: job.file.name,
+          resultPath: job.sourcePath,
+          savedInPlace: true,
+        }
+      }
+
+      const outputExtension = extensionOf(processed.outputName)
+      if (!desktop.capabilities.bufferReplacementExtensions.includes(outputExtension)) {
+        throw new Error(`桌面版暂不支持替换为 ${outputExtension.toUpperCase()}`)
+      }
+      onProgress(91, '正在安全替换原文件')
+      const replacement = await desktop.replaceWithData({
+        sourcePath: job.sourcePath,
+        outputExtension,
+        data: await processed.blob.arrayBuffer(),
+      })
       return {
-        blob: job.file,
-        outputName: `${baseName(job.file.name)}-压缩.${originalExtension}`,
-        outputLabel: '保持原格式',
+        ...processed,
+        outputName: replacement.outputName,
+        resultPath: replacement.outputPath,
+        savedInPlace: true,
       }
     },
     [compressImage, updateJob],
@@ -671,9 +862,12 @@ function App() {
           resultUrl,
           outputName: processed.outputName,
           outputLabel: processed.outputLabel,
+          resultPath: processed.resultPath ?? null,
           status: 'done',
           progress: 100,
-          stage: keptOriginal ? '原文件已经很紧凑，未再增大' : '压缩完成',
+          stage: processed.savedInPlace
+            ? processed.unchanged ? '原文件已保留' : '已替换原路径文件'
+            : keptOriginal ? '原文件已经很紧凑，未再增大' : '压缩完成',
         })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error ?? '处理失败，请重试')
@@ -722,17 +916,25 @@ function App() {
 
       const nextJobs = selected.map<MediaJob>(({ file, kind }) => {
         const originalUrl = createUrl(file)
+        let sourcePath: string | null = null
+        try {
+          sourcePath = window.compreesorDesktop?.pathForFile(file) || null
+        } catch {
+          sourcePath = null
+        }
         return {
           id: crypto.randomUUID(),
           file,
           kind,
-          preferences: { imageOutput, videoOutput },
+          preferences: { compressionPreset, imageOutput, videoOutput },
+          sourcePath,
           originalUrl,
           thumbnailUrl: kind === 'video' ? null : originalUrl,
           resultBlob: null,
           resultUrl: null,
           outputName: null,
           outputLabel: null,
+          resultPath: null,
           status: 'queued',
           progress: 0,
           stage: '等待处理',
@@ -766,7 +968,7 @@ function App() {
           .catch(() => undefined)
       })
     },
-    [createUrl, imageOutput, jobs.length, messages, pumpQueue, revokeUrl, videoOutput],
+    [compressionPreset, createUrl, imageOutput, jobs.length, messages, pumpQueue, revokeUrl, videoOutput],
   )
 
   const completedJobs = useMemo(
@@ -830,9 +1032,13 @@ function App() {
   }, [isProcessing, jobs, revokeUrl])
 
   const downloadJob = useCallback((job: MediaJob) => {
+    if (job.resultPath && window.compreesorDesktop) {
+      void window.compreesorDesktop.revealResultFile(job.resultPath).catch(() => setNotice(messages.failed))
+      return
+    }
     if (!job.resultUrl || !job.outputName) return
     download(job.resultUrl, job.outputName)
-  }, [])
+  }, [messages.failed])
 
   const downloadAll = useCallback(async () => {
     if (completedJobs.length === 0 || isProcessing || isZipping) return
@@ -951,8 +1157,10 @@ function App() {
 
           <Preferences
             messages={messages}
+            compressionPreset={compressionPreset}
             imageOutput={imageOutput}
             videoOutput={videoOutput}
+            onCompressionPresetChange={setCompressionPreset}
             onImageOutputChange={setImageOutput}
             onVideoOutputChange={setVideoOutput}
           />
@@ -1048,6 +1256,17 @@ function App() {
                             ? `${formatBytes(job.file.size)} → ${formatBytes(job.resultBlob.size)}`
                             : formatBytes(job.file.size)}
                         </p>
+                        <div
+                          className="job-progress"
+                          role="progressbar"
+                          aria-label={messages.progressLabel(job.file.name)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-valuenow={job.progress}
+                          title={`${statusText(job, messages)} ${job.progress}%`}
+                        >
+                          <span style={{ transform: `scaleX(${Math.max(0, Math.min(100, job.progress)) / 100})` }} />
+                        </div>
                         {job.status === 'error' && (
                           <small className="error-text">
                             {locale === 'zh' || locale === 'zh-Hant' ? job.error : messages.failed}
@@ -1093,8 +1312,8 @@ function App() {
                             <button
                               type="button"
                               onClick={() => downloadJob(job)}
-                              aria-label={`${messages.download} ${job.file.name}`}
-                              title={messages.download}
+                              aria-label={`${job.resultPath && window.compreesorDesktop ? messages.reveal : messages.download} ${job.file.name}`}
+                              title={job.resultPath && window.compreesorDesktop ? messages.reveal : messages.download}
                             >
                               <DownloadSimple size={15} weight="bold" />
                             </button>
@@ -1186,6 +1405,13 @@ function App() {
         </div>
       </footer>
 
+      {toast && (
+        <div className={`app-toast is-${toast.tone}`} role="status" aria-live="polite" aria-atomic="true">
+          {toast.tone === 'success' ? <CheckCircle size={17} weight="fill" /> : <WarningCircle size={17} weight="fill" />}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
       {previewJob && previewJob.resultUrl && (
         <aside className="result-preview" aria-label={`${messages.preview} ${previewJob.file.name}`}>
           <header>
@@ -1244,10 +1470,16 @@ function App() {
               <p>{messages.cliIntro}</p>
               <div className="cli-command" aria-label={messages.cliInstallLabel}>
                 <span>{messages.cliInstallLabel}</span>
-                <code>npm install -g compreesor-cli</code>
+                <div className="cli-command-row">
+                  <code>{CLI_INSTALL_COMMAND}</code>
+                  <button type="button" onClick={copyCliInstallCommand} aria-label={messages.copyCommand} title={messages.copyCommand}>
+                    <CopySimple size={17} weight="bold" />
+                  </button>
+                </div>
               </div>
               <div className="guide-grid cli-guide-grid">
                 <article><h4>{messages.cliFolderTitle}</h4><p>{messages.cliFolderText}</p><code>compreesor ./图片目录</code></article>
+                <article><h4>{messages.cliPresetTitle}</h4><p>{messages.cliPresetText}</p><code>compreesor . --preset extreme</code></article>
                 <article><h4>{messages.cliFormatTitle}</h4><p>{messages.cliFormatText}</p><code>compreesor . --format webp</code></article>
                 <article><h4>{messages.cliReplaceTitle}</h4><p>{messages.cliReplaceText}</p><code>compreesor . --replace --yes</code></article>
               </div>

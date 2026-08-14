@@ -1,9 +1,11 @@
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .app-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 22px clamp(16px, 3vw, 36px) 20px;
@@ -335,6 +337,7 @@
 
 .queue-controls button,
 .job-action button {
+  appearance: none;
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -591,6 +594,36 @@
   font-weight: 800;
 }
 
+.cli-command-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.cli-command-row button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.cli-command-row button:hover {
+  color: var(--text);
+  background: var(--blue-soft);
+}
+
+.cli-command-row button:active {
+  transform: scale(0.96);
+}
+
 .cli-command code,
 .cli-guide-grid code {
   color: var(--text);
@@ -789,6 +822,34 @@
   white-space: nowrap;
 }
 
+.job-progress {
+  width: min(190px, 100%);
+  height: 3px;
+  margin-top: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+
+.job-progress > span {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform: scaleX(0);
+  transform-origin: left center;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: transform 180ms ease-out;
+}
+
+.status-done .job-progress > span {
+  background: var(--success);
+}
+
+.status-error .job-progress > span {
+  background: #bd3148;
+}
+
 .error-text {
   display: block;
   margin-top: 5px;
@@ -856,6 +917,43 @@
 
 .job-action button:hover {
   background: transparent;
+}
+
+.app-toast {
+  position: fixed;
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 70;
+  min-height: 38px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 12px 34px rgba(9, 18, 34, 0.18);
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px);
+  animation: toast-in 180ms ease-out both;
+}
+
+.app-toast.is-success svg {
+  color: var(--success);
+}
+
+.app-toast.is-error svg {
+  color: #bd3148;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 .result-preview {
@@ -1042,6 +1140,10 @@
 }
 
 @media (max-width: 450px) {
+  .job-progress {
+    display: none;
+  }
+
   .brand strong {
     font-size: 20px;
   }
