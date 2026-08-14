@@ -7,6 +7,7 @@ import type { CompressionPreset } from './types'
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 type ProgressReporter = (progress: number, stage: string) => void
+export type PdfPageImageFormat = 'jpeg' | 'webp' | 'png'
 
 type PdfProfile = {
   dpi: number
@@ -105,6 +106,63 @@ export async function createPdfThumbnail(file: File) {
     const thumbnail = await canvasBlob(canvas, 'image/jpeg', 0.78)
     page.cleanup()
     return thumbnail
+  } finally {
+    await loadingTask.destroy()
+  }
+}
+
+export async function imageBlobToPdf(blob: Blob) {
+  const output = await PDFDocument.create()
+  const bytes = await blob.arrayBuffer()
+  const image = blob.type === 'image/png'
+    ? await output.embedPng(bytes)
+    : await output.embedJpg(bytes)
+  const maxPageDimension = 1440
+  const scale = Math.min(1, maxPageDimension / Math.max(image.width, image.height))
+  const width = Math.max(1, image.width * scale)
+  const height = Math.max(1, image.height * scale)
+  const page = output.addPage([width, height])
+  page.drawImage(image, { x: 0, y: 0, width, height })
+  const saved = safeBytes(await output.save({ useObjectStreams: true, addDefaultPage: false }))
+  return new Blob([saved.buffer], { type: 'application/pdf' })
+}
+
+export async function extractPdfPages(
+  file: File,
+  format: PdfPageImageFormat,
+  maxPages: number,
+  onProgress: ProgressReporter,
+) {
+  const loadingTask = getDocument({ data: new Uint8Array(await file.arrayBuffer()) })
+  const pdf = await loadingTask.promise
+  const pages: File[] = []
+  const pageCount = Math.min(pdf.numPages, Math.max(1, maxPages))
+  const stem = file.name.replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|]/g, '-').trim() || 'PDF'
+  const mimeType = format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png'
+  const extension = format === 'jpeg' ? 'jpg' : format
+
+  try {
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber)
+      const original = page.getViewport({ scale: 1 })
+      const scale = Math.min(160 / 72, 2400 / Math.max(original.width, original.height))
+      const viewport = page.getViewport({ scale })
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(viewport.width))
+      canvas.height = Math.max(1, Math.round(viewport.height))
+      const context = canvas.getContext('2d', { alpha: false })
+      if (!context) throw new Error('浏览器无法创建 PDF 页面画布')
+      context.fillStyle = '#ffffff'
+      context.fillRect(0, 0, canvas.width, canvas.height)
+      await page.render({ canvas, canvasContext: context, viewport, background: '#ffffff' }).promise
+      const blob = await canvasBlob(canvas, mimeType, format === 'png' ? undefined : 0.92)
+      pages.push(new File([blob], `${stem}-第${pageNumber}页.${extension}`, { type: mimeType }))
+      canvas.width = 1
+      canvas.height = 1
+      page.cleanup()
+      onProgress(Math.round((pageNumber / pageCount) * 100), `正在展开 PDF · 第 ${pageNumber}/${pageCount} 页`)
+    }
+    return { pages, totalPages: pdf.numPages }
   } finally {
     await loadingTask.destroy()
   }

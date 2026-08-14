@@ -1,9 +1,12 @@
 import { chromium } from 'playwright'
 import { PDFDocument } from 'pdf-lib'
 import { readFile, stat, writeFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 
 const fixturePath = '/tmp/compreesor-pdf-e2e.pdf'
-const sourceIcon = await readFile(new URL('../docs/assets/robot-paper-icon-source.png', import.meta.url))
+const sourceIconUrl = new URL('../docs/assets/robot-paper-icon-source.png', import.meta.url)
+const sourceIconPath = fileURLToPath(sourceIconUrl)
+const sourceIcon = await readFile(sourceIconUrl)
 const fixture = await PDFDocument.create()
 for (let index = 0; index < 3; index += 1) {
   const image = await fixture.embedPng(sourceIcon)
@@ -33,8 +36,8 @@ try {
   if (!(await page.locator('.queue-section').getAttribute('class'))?.includes('is-spacious')) throw new Error('Small queue should use spacious layout')
   const thumbnail = await page.locator('.thumbnail').boundingBox()
   if (!thumbnail || thumbnail.width < 70) throw new Error(`Spacious thumbnail is too small: ${JSON.stringify(thumbnail)}`)
-  if ((await page.locator('.variant-size-strip span').count()) !== 3) throw new Error('Three result sizes are missing')
-  if ((await page.locator('.variant-download-menu').count()) !== 1) throw new Error('Per-quality list download menu is missing')
+  if ((await page.locator('.variant-results .variant-result-item').count()) !== 3) throw new Error('Three right-aligned results are missing')
+  if (!/^\d+%–\d+%$/.test((await page.locator('.result-ratio-range').getAttribute('aria-label')) ?? '')) throw new Error('Three-quality ratio range is missing')
 
   await page.getByRole('button', { name: `预览 compreesor-pdf-e2e.pdf` }).click()
   if ((await page.locator('.comparison-card').count()) !== 3) throw new Error('Comparison preview should show three cards')
@@ -42,10 +45,10 @@ try {
   if ((await page.locator('.comparison-card header button').count()) !== 3) throw new Error('Comparison downloads are missing')
   await page.locator('.result-preview > header button').click()
 
+  const zipEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: '打包下载' }).click()
-  const choices = await page.locator('.package-choice-grid button').allInnerTexts()
-  if (choices.length !== 4 || !choices.at(-1)?.includes('我都要')) throw new Error(`Unexpected package choices: ${choices.join(' | ')}`)
-  await page.locator('.package-choice-dialog > header button').click()
+  await zipEvent
+  if (await page.locator('.package-choice-dialog').count()) throw new Error('ZIP download should not ask for a quality')
 
   await page.getByRole('button', { name: '清空' }).click()
   await preset.selectOption('target-100k')
@@ -61,8 +64,82 @@ try {
   const resultStat = await stat(savedPath)
   if (result.suggestedFilename() !== 'compreesor-pdf-e2e-压缩.pdf') throw new Error(`Unexpected PDF name: ${result.suggestedFilename()}`)
   if (resultStat.size > 100 * 1024) throw new Error(`100 KB target was missed: ${resultStat.size}`)
+
+  await page.getByRole('button', { name: '清空' }).click()
+  await preset.selectOption('balanced')
+  const imageOutput = page.locator('.preferences select').nth(1)
+  await imageOutput.selectOption('pdf')
+  await page.locator('input[type="file"]').setInputFiles(sourceIconPath)
+  await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
+  const imagePdfDownload = page.waitForEvent('download')
+  await page.locator('.job-action button').nth(1).click()
+  const imagePdf = await imagePdfDownload
+  const imagePdfPath = '/tmp/compreesor-image-to-pdf.pdf'
+  await imagePdf.saveAs(imagePdfPath)
+  if (!imagePdf.suggestedFilename().endsWith('-压缩.pdf')) throw new Error(`Image to PDF filename is incorrect: ${imagePdf.suggestedFilename()}`)
+  if ((await readFile(imagePdfPath, { encoding: 'utf8' })).slice(0, 4) !== '%PDF') throw new Error('Image to PDF result is invalid')
+  await page.getByRole('button', { name: `预览 ${sourceIconPath.split('/').at(-1)}` }).click()
+  if ((await page.locator('.result-preview iframe').count()) !== 1) throw new Error('Image to PDF should use the PDF preview')
+  await page.locator('.result-preview > header button').click()
+
+  await page.getByRole('button', { name: '清空' }).click()
+  await imageOutput.selectOption('jpeg')
+  await page.locator('input[type="file"]').setInputFiles(fixturePath)
+  await page.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 3, undefined, { timeout: 120_000 })
+  const splitNames = await page.locator('.job-copy > strong').allInnerTexts()
+  if (!splitNames.every((name, index) => name.includes(`第${index + 1}页`))) throw new Error(`PDF pages were not expanded into rows: ${splitNames.join(' | ')}`)
+  const pageDownloadEvent = page.waitForEvent('download')
+  await page.locator('.job-row').first().locator('.job-action button').nth(1).click()
+  const pageDownload = await pageDownloadEvent
+  const pageImagePath = '/tmp/compreesor-pdf-page.jpg'
+  await pageDownload.saveAs(pageImagePath)
+  const pageBytes = await readFile(pageImagePath)
+  if (pageBytes[0] !== 0xff || pageBytes[1] !== 0xd8) throw new Error('PDF page did not become a JPEG image')
+
+  await page.getByRole('button', { name: '清空' }).click()
+  await preset.selectOption('all')
+  await imageOutput.selectOption('webp')
+  await page.locator('input[type="file"]').setInputFiles(sourceIconPath)
+  await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
+  const resultItems = page.locator('.variant-result-item')
+  if ((await resultItems.count()) !== 3) throw new Error('Image result chips are missing')
+  await resultItems.first().hover()
+  await page.locator('.variant-hover-preview').first().waitFor()
+  if ((await page.locator('.variant-hover-preview .actual-size-badge').first().innerText()).trim() !== '1:1') throw new Error('Hover preview is not marked 1:1')
+  if ((await page.locator('.variant-hover-preview button').count()) !== 3) throw new Error('Hover previews should include per-quality downloads')
+
+  await page.getByRole('button', { name: `预览 ${sourceIconPath.split('/').at(-1)}` }).click()
+  if ((await page.locator('.comparison-image-stage').count()) !== 3) throw new Error('Image comparison should open three synchronized windows')
+  await page.getByRole('button', { name: '放大' }).click()
+  await page.waitForTimeout(140)
+  const zoomedTransforms = await page.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => getComputedStyle(image).transform))
+  if (new Set(zoomedTransforms).size !== 1 || !zoomedTransforms[0].includes('1.25')) throw new Error(`Comparison zoom is not synchronized: ${zoomedTransforms.join(' | ')}`)
+  const stageBox = await page.locator('.comparison-image-stage').first().boundingBox()
+  if (!stageBox) throw new Error('Comparison stage is missing')
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(stageBox.x + stageBox.width / 2 + 22, stageBox.y + stageBox.height / 2 + 14)
+  await page.mouse.up()
+  await page.waitForTimeout(140)
+  const movedTransforms = await page.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => getComputedStyle(image).transform))
+  if (new Set(movedTransforms).size !== 1 || movedTransforms[0] === zoomedTransforms[0]) throw new Error(`Comparison pan is not synchronized: ${movedTransforms.join(' | ')}`)
+  await page.locator('.result-preview > header button').click()
+
+  await imageOutput.selectOption('jpeg')
+  const reprocess = page.getByRole('button', { name: '全部重新处理' })
+  await reprocess.waitFor()
+  const reprocessBox = await reprocess.boundingBox()
+  const lastPreferenceBox = await page.locator('.preferences label').last().boundingBox()
+  if (!reprocessBox || !lastPreferenceBox || reprocessBox.x <= lastPreferenceBox.x + lastPreferenceBox.width) throw new Error('Reprocess button should sit at the far right')
+  await reprocess.click()
+  if (!(await reprocess.isDisabled())) throw new Error('Reprocess button should disable after it is used')
+  await page.locator('.job-row.status-processing, .job-row.status-queued').first().waitFor({ timeout: 20_000 })
+  await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
+  if (!(await reprocess.isDisabled())) throw new Error('Reprocess button should stay disabled until another preference changes')
+  await preset.selectOption('extreme')
+  if (await reprocess.isDisabled()) throw new Error('Changing a preference should re-enable reprocessing')
   if (errors.length) throw new Error(errors.join('\n'))
-  console.log('PDF and all-quality E2E passed')
+  console.log('PDF conversion and synchronized all-quality E2E passed')
 } finally {
   await browser.close()
 }

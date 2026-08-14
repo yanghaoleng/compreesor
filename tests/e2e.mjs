@@ -18,8 +18,26 @@ await page.getByRole('heading', { name: '输出偏好' }).waitFor()
 if ((await page.locator('.preferences select').count()) !== 3) throw new Error('Output preferences or compression preset are missing before upload')
 if (await page.locator('.preferences select').nth(0).inputValue() !== 'all') throw new Error('Compression should default to all three qualities')
 if ((await page.locator('.preferences select').nth(0).locator('option').count()) !== 9) throw new Error('Compression presets should include three qualities and five target sizes')
-if ((await page.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompreesor') throw new Error('Brand name is incorrect')
+if ((await page.locator('.preferences label').nth(1).locator('span').innerText()).trim() !== '图片和 PDF') throw new Error('Image and PDF preference label is incorrect')
+if ((await page.locator('.preferences select').nth(1).locator('option[value="pdf"]').count()) !== 1) throw new Error('Image to PDF output is missing')
+if ((await page.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompressor Studio') throw new Error('Brand name is incorrect')
 if (!(await page.locator('.brand-mark img').getAttribute('src'))?.includes('robot-paper-')) throw new Error('Robot paper icon is missing')
+await page.waitForFunction(() => document.querySelector('.brand-mark')?.getAnimations().length === 2)
+const initialBrandAnimations = await page.locator('.brand-mark').evaluate((element) => element.getAnimations().map((animation) => animation.animationName))
+if (!initialBrandAnimations.includes('brand-mark-drop-in') || !initialBrandAnimations.includes('brand-mark-bounce')) {
+  throw new Error(`Brand entrance should include drop-in and bounce: ${initialBrandAnimations.join(', ')}`)
+}
+await page.locator('.brand-mark img').evaluate((image) => { image.dataset.stableNode = 'true' })
+await page.locator('.brand').click()
+await page.waitForFunction(() => document.querySelector('.brand-mark')?.classList.contains('brand-mark-replay'))
+const replayBrand = await page.locator('.brand-mark').evaluate((element) => ({
+  animations: element.getAnimations().map((animation) => animation.animationName),
+  stableNode: element.querySelector('img')?.dataset.stableNode,
+  opacity: getComputedStyle(element).opacity,
+}))
+if (replayBrand.stableNode !== 'true' || replayBrand.opacity !== '1' || replayBrand.animations.some((name) => name !== 'brand-mark-bounce')) {
+  throw new Error(`Brand click should replay bounce on the same image node: ${JSON.stringify(replayBrand)}`)
+}
 await page.locator('.preferences select').nth(0).selectOption('balanced')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
   throw new Error('Original image output copy is incorrect')
@@ -31,6 +49,29 @@ if (!preferenceHeadingBox || !firstPreferenceBox || firstPreferenceBox.x - (pref
   throw new Error('Output preferences should form a compact left-aligned group')
 }
 if ((await page.locator('.topbar-actions button').count()) < 2) throw new Error('Language or theme controls are missing')
+const languageControl = page.locator('.language-button')
+await languageControl.hover()
+await page.waitForTimeout(220)
+const languageHover = await languageControl.evaluate((element) => {
+  const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform)
+  return { y: matrix.m42, color: getComputedStyle(element).color }
+})
+if (languageHover.y > -1.5) throw new Error(`Language control hover lacks lift: ${JSON.stringify(languageHover)}`)
+await languageControl.click()
+const englishMenuItem = page.getByRole('menuitemradio', { name: 'English' })
+await englishMenuItem.hover()
+await page.waitForTimeout(200)
+const languageItemX = await englishMenuItem.evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m41)
+if (languageItemX < 1.5) throw new Error('Language menu item hover lacks horizontal feedback')
+await languageControl.click()
+const themeControl = page.locator('.topbar-actions > .icon-button')
+await themeControl.hover()
+await page.waitForTimeout(220)
+const themeHoverY = await themeControl.evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42)
+if (themeHoverY > -1.5) throw new Error('Theme control hover lacks lift')
+await themeControl.click()
+await page.waitForFunction(() => document.querySelector('.topbar-actions > .icon-button svg')?.getAnimations().some((animation) => animation.animationName === 'control-icon-in'))
+await themeControl.click()
 await page.locator('input[type="file"]').setInputFiles([
   '/tmp/compreesor-fixture.png',
   '/tmp/compreesor-animation.gif',
@@ -68,6 +109,11 @@ if (!firstThumbnail || firstThumbnail.width > 44 || firstThumbnail.height > 44) 
 if (!(await page.locator('.job-copy p').first().innerText()).includes('→')) throw new Error('Compression details should show original and result sizes')
 if ((await page.locator('.job-progress').count()) !== 3) throw new Error('Every file should expose a progress bar')
 if (await page.locator('.job-progress').first().getAttribute('aria-valuenow') !== '100') throw new Error('Completed progress should reach 100')
+const compactCopyBox = await page.locator('.job-copy').first().boundingBox()
+const compactProgressBox = await page.locator('.job-progress').first().boundingBox()
+if (!compactCopyBox || !compactProgressBox || Math.abs((compactProgressBox.y + compactProgressBox.height / 2) - (compactCopyBox.y + compactCopyBox.height / 2)) > 3) {
+  throw new Error('Compact progress should sit in the vertical middle of the file information')
+}
 if (!/^\d+%$/.test((await page.locator('.job-row').first().locator('.job-state').innerText()).trim())) {
   throw new Error('Image result ratio is missing beside the green check')
 }
@@ -425,6 +471,14 @@ const reducedMotionWords = await reducedMotionPage.locator('.spring-scale-word')
 })))
 if (reducedMotionWords.length === 0 || reducedMotionWords.some((word) => word.animationCount !== 0 || word.opacity !== '1')) {
   throw new Error(`Reduced-motion donation copy should stay visible without WAAPI: ${JSON.stringify(reducedMotionWords)}`)
+}
+const reducedBrand = await reducedMotionPage.locator('.brand-mark').evaluate((element) => ({
+  animationCount: element.getAnimations().length,
+  opacity: getComputedStyle(element).opacity,
+  transform: getComputedStyle(element).transform,
+}))
+if (reducedBrand.animationCount !== 0 || reducedBrand.opacity !== '1' || reducedBrand.transform !== 'none') {
+  throw new Error(`Reduced-motion brand should be static: ${JSON.stringify(reducedBrand)}`)
 }
 
 await browser.close()

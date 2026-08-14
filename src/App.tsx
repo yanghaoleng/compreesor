@@ -40,7 +40,7 @@ import {
   disposeMediaEngine,
   type VideoOutputPreference,
 } from './mediaCompressor'
-import { compressPdf, createPdfThumbnail } from './pdfCompressor'
+import { compressPdf, createPdfThumbnail, extractPdfPages, imageBlobToPdf } from './pdfCompressor'
 import type {
   CompressionPreset,
   CompressionSettings,
@@ -64,7 +64,7 @@ import {
 
 type JobKind = 'image' | 'gif' | 'video' | 'pdf'
 type JobStatus = 'queued' | 'processing' | 'done' | 'error'
-type ImageOutputPreference = 'original' | 'jpeg' | 'webp' | 'png'
+type ImageOutputPreference = 'original' | 'jpeg' | 'webp' | 'png' | 'pdf'
 type CompressionSelection = CompressionPreset | 'all'
 
 type JobPreferences = {
@@ -76,10 +76,12 @@ type JobPreferences = {
 type MediaJob = {
   id: string
   file: File
+  originFile: File
   kind: JobKind
   preferences: JobPreferences
   allQualities: boolean
   sourcePath: string | null
+  preserveSource: boolean
   originalUrl: string
   thumbnailUrl: string | null
   resultBlob: Blob | null
@@ -188,6 +190,7 @@ function desktopFormatForJob(job: MediaJob): DesktopNativeFormat | null {
     if (job.preferences.videoOutput === 'mov-alpha') return null
     return job.preferences.videoOutput
   }
+  if (job.preferences.imageOutput === 'pdf') return null
   if (job.preferences.imageOutput === 'original') return 'original'
   return job.preferences.imageOutput === 'jpeg' ? 'jpg' : job.preferences.imageOutput
 }
@@ -372,6 +375,20 @@ function AnimatedPercentage({ value }: { value: number }) {
       {displayValue}%
     </span>
   )
+}
+
+function AnimatedPercentageRange({ from, to }: { from: number; to: number }) {
+  return (
+    <span className="result-ratio-range" aria-label={`${from}%–${to}%`}>
+      <AnimatedPercentage value={from} />
+      <i aria-hidden="true">–</i>
+      <AnimatedPercentage value={to} />
+    </span>
+  )
+}
+
+function isPdfVariant(variant: ResultVariant) {
+  return variant.outputLabel === 'PDF' || variant.outputName.toLowerCase().endsWith('.pdf')
 }
 
 function waitFor(target: EventTarget, eventName: string, timeout = 6000) {
@@ -584,6 +601,9 @@ type PreferencesProps = {
   onCompressionPresetChange: (value: CompressionSelection) => void
   onImageOutputChange: (value: ImageOutputPreference) => void
   onVideoOutputChange: (value: VideoOutputPreference) => void
+  showReprocess: boolean
+  reprocessDisabled: boolean
+  onReprocess: () => void
 }
 
 function Preferences({
@@ -594,6 +614,9 @@ function Preferences({
   onCompressionPresetChange,
   onImageOutputChange,
   onVideoOutputChange,
+  showReprocess,
+  reprocessDisabled,
+  onReprocess,
 }: PreferencesProps) {
   return (
     <section className="preferences" aria-labelledby="page-title">
@@ -619,6 +642,7 @@ function Preferences({
           <option value="jpeg">{messages.jpg}</option>
           <option value="webp">{messages.webp}</option>
           <option value="png">{messages.png}</option>
+          <option value="pdf">{messages.pdf}</option>
         </select>
       </label>
       <label>
@@ -631,6 +655,11 @@ function Preferences({
           <option value="mp3">{messages.extractMp3}</option>
         </select>
       </label>
+      {showReprocess && (
+        <button className="reprocess-all" type="button" onClick={onReprocess} disabled={reprocessDisabled}>
+          {messages.reprocessAll}
+        </button>
+      )}
     </section>
   )
 }
@@ -642,12 +671,14 @@ function App() {
   const [isDragging, setIsDragging] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [isZipping, setIsZipping] = useState(false)
-  const [zipChoiceOpen, setZipChoiceOpen] = useState(false)
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [usageGuideOpen, setUsageGuideOpen] = useState(false)
   const [cliGuideOpen, setCliGuideOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [previewJobId, setPreviewJobId] = useState<string | null>(null)
+  const [comparisonView, setComparisonView] = useState({ scale: 1, x: 0, y: 0 })
+  const [reprocessVisible, setReprocessVisible] = useState(false)
+  const [reprocessReady, setReprocessReady] = useState(false)
   const [donateMethod, setDonateMethod] = useState<'wechat' | 'alipay'>('wechat')
   const [donatePraiseIndex, setDonatePraiseIndex] = useState(-1)
   const [donatePanelState, setDonatePanelState] = useState<'closed' | 'open' | 'closing'>('closed')
@@ -661,6 +692,8 @@ function App() {
   const processingRef = useRef(false)
   const urlsRef = useRef(new Set<string>())
   const inputRef = useRef<HTMLInputElement>(null)
+  const brandMarkRef = useRef<HTMLSpanElement>(null)
+  const comparisonDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null)
   const dragDepthRef = useRef(0)
   const languageMenuRef = useRef<HTMLDivElement>(null)
   const donateWidgetRef = useRef<HTMLDivElement>(null)
@@ -699,6 +732,15 @@ function App() {
       showToast(messages.copyFailed, 'error')
     }
   }, [messages.commandCopied, messages.copyFailed, showToast])
+
+  const replayBrandBounce = useCallback(() => {
+    const mark = brandMarkRef.current
+    if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    mark.classList.remove('brand-mark-replay')
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => mark.classList.add('brand-mark-replay'))
+    })
+  }, [])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -845,6 +887,7 @@ function App() {
       } else {
         buffer = await job.file.arrayBuffer()
       }
+      if (job.preferences.imageOutput === 'pdf') throw new Error('请先将图片编码后再生成 PDF')
       const outputFormat = job.preferences.imageOutput === 'original'
         ? originalImageFormat(job.file)
         : job.preferences.imageOutput
@@ -947,7 +990,23 @@ function App() {
 
       let processed: ProcessedFile
       if (job.kind === 'image') {
-        processed = await compressImage(job, onProgress)
+        if (job.preferences.imageOutput === 'pdf') {
+          const sourceFormat = job.preferences.compressionPreset === 'lossless'
+            ? originalImageFormat(job.file) === 'jpeg' ? 'jpeg' : 'png'
+            : 'jpeg'
+          const imageResult = await compressImage({
+            ...job,
+            preferences: { ...job.preferences, imageOutput: sourceFormat },
+          }, (progress, stage) => onProgress(progress * 0.9, stage))
+          onProgress(94, '正在生成 PDF')
+          processed = {
+            blob: await imageBlobToPdf(imageResult.blob),
+            outputName: `${baseName(job.file.name)}-压缩.pdf`,
+            outputLabel: 'PDF',
+          }
+        } else {
+          processed = await compressImage(job, onProgress)
+        }
       } else if (job.kind === 'gif') {
         const blob = await compressGif(job.file, job.id, job.preferences.compressionPreset, onProgress)
         processed = {
@@ -1058,11 +1117,11 @@ function App() {
             variants.push({ ...processed, preset, outputName, url: createUrl(processed.blob) })
           }
         } else {
-          const processed = await processSingleJob(job)
+          const processed = await processSingleJob(job, 0, 100, !job.preserveSource)
           variants.push({ ...processed, preset: job.preferences.compressionPreset, url: createUrl(processed.blob) })
         }
-        if (job.allQualities && window.compreesorDesktop && job.sourcePath) {
-          updateJob(job.id, { progress: 98, stage: '正在保存三档结果到原文件夹' })
+        if ((job.allQualities || job.preserveSource) && window.compreesorDesktop && job.sourcePath) {
+          updateJob(job.id, { progress: 98, stage: '正在保存结果到原文件夹' })
           const saved = await window.compreesorDesktop.writeVariants({
             sourcePath: job.sourcePath,
             variants: await Promise.all(variants.map(async (variant) => ({
@@ -1088,8 +1147,10 @@ function App() {
           resultPath: primary.resultPath ?? null,
           status: 'done',
           progress: 100,
-          stage: primary.savedInPlace
-            ? primary.unchanged ? '原文件已保留' : '已替换原路径文件'
+          stage: (job.allQualities || job.preserveSource) && primary.savedInPlace
+            ? '结果已保存到原文件夹'
+            : primary.savedInPlace
+              ? primary.unchanged ? '原文件已保留' : '已替换原路径文件'
             : job.allQualities ? job.sourcePath && window.compreesorDesktop ? '三档结果已保存到原文件夹' : '三档结果已完成'
             : keptOriginal ? '原文件已经很紧凑，未再增大' : '压缩完成',
         })
@@ -1120,35 +1181,64 @@ function App() {
   }, [createUrl, processSingleJob, updateJob])
 
   const addFiles = useCallback(
-    (incoming: File[]) => {
+    async (incoming: File[], replaceExisting = false) => {
       const classified = incoming
         .map((file) => ({ file, kind: classifyFile(file) }))
         .filter((item): item is { file: File; kind: JobKind } => item.kind !== null)
       const withinLimit = classified.filter(({ file, kind }) =>
         file.size <= (kind === 'image' ? MAX_IMAGE_BYTES : kind === 'pdf' ? MAX_PDF_BYTES : MAX_MEDIA_BYTES),
       )
-      const selected = withinLimit.slice(0, Math.max(0, MAX_FILES - jobs.length))
+      const availableSlots = Math.max(0, MAX_FILES - (replaceExisting ? 0 : jobs.length))
+      const expanded: Array<{ file: File; originFile: File; kind: JobKind; sourcePath: string | null; preserveSource: boolean }> = []
+      let pageLimitReached = false
+
+      for (const item of withinLimit) {
+        if (expanded.length >= availableSlots) break
+        let sourcePath: string | null = null
+        try {
+          sourcePath = window.compreesorDesktop?.pathForFile(item.file) || null
+        } catch {
+          sourcePath = null
+        }
+
+        if (item.kind === 'pdf' && imageOutput !== 'original' && imageOutput !== 'pdf') {
+          setNotice(messages.splittingPdf)
+          try {
+            const remaining = availableSlots - expanded.length
+            const extracted = await extractPdfPages(item.file, imageOutput, remaining, (_progress, stage) => setNotice(stage))
+            extracted.pages.forEach((file) => expanded.push({
+              file,
+              originFile: item.file,
+              kind: 'image',
+              sourcePath,
+              preserveSource: true,
+            }))
+            if (extracted.totalPages > extracted.pages.length) pageLimitReached = true
+          } catch {
+            setNotice(messages.pdfSplitFailed)
+          }
+          continue
+        }
+
+        expanded.push({ ...item, originFile: item.file, sourcePath, preserveSource: false })
+      }
+      const selected = expanded.slice(0, availableSlots)
 
       if (selected.length === 0) {
         setNotice(
           classified.length > withinLimit.length
             ? messages.tooLarge
-            : messages.unsupported,
+            : classified.length === 0 ? messages.unsupported : messages.pdfSplitFailed,
         )
-        return
+        return false
       }
 
-      const nextJobs = selected.map<MediaJob>(({ file, kind }) => {
+      const nextJobs = selected.map<MediaJob>(({ file, originFile, kind, sourcePath, preserveSource }) => {
         const originalUrl = createUrl(file)
-        let sourcePath: string | null = null
-        try {
-          sourcePath = window.compreesorDesktop?.pathForFile(file) || null
-        } catch {
-          sourcePath = null
-        }
         return {
           id: crypto.randomUUID(),
           file,
+          originFile,
           kind,
           preferences: {
             compressionPreset: compressionPreset === 'all' ? DEFAULT_COMPRESSION_PRESET : compressionPreset,
@@ -1157,6 +1247,7 @@ function App() {
           },
           allQualities: compressionPreset === 'all',
           sourcePath,
+          preserveSource,
           originalUrl,
           thumbnailUrl: kind === 'video' || kind === 'pdf' ? null : originalUrl,
           resultBlob: null,
@@ -1172,12 +1263,24 @@ function App() {
         }
       })
 
-      setJobs((current) => [...current, ...nextJobs])
-      queueRef.current.push(...nextJobs)
+      if (replaceExisting) {
+        jobs.forEach((job) => {
+          revokeUrl(job.originalUrl)
+          if (job.thumbnailUrl !== job.originalUrl) revokeUrl(job.thumbnailUrl)
+          if (job.variants.length > 0) job.variants.forEach((variant) => revokeUrl(variant.url))
+          else revokeUrl(job.resultUrl)
+        })
+        queueRef.current = [...nextJobs]
+        setJobs(nextJobs)
+        setPreviewJobId(null)
+      } else {
+        setJobs((current) => [...current, ...nextJobs])
+        queueRef.current.push(...nextJobs)
+      }
       setNotice(
         classified.length !== incoming.length
           ? messages.ignored
-          : withinLimit.length > selected.length
+          : pageLimitReached || withinLimit.length > selected.length
             ? messages.maxFiles
             : null,
       )
@@ -1200,8 +1303,9 @@ function App() {
           })
           .catch(() => undefined)
       })
+      return true
     },
-    [compressionPreset, createUrl, imageOutput, jobs.length, messages, pumpQueue, revokeUrl, videoOutput],
+    [compressionPreset, createUrl, imageOutput, jobs, messages, pumpQueue, revokeUrl, videoOutput],
   )
 
   const completedJobs = useMemo(
@@ -1214,10 +1318,21 @@ function App() {
   )
   const previewJob = previewableJobs.find((job) => job.id === previewJobId) ?? null
   const previewIndex = previewJob ? previewableJobs.findIndex((job) => job.id === previewJob.id) : -1
+  const comparisonSupportsSync = Boolean(
+    previewJob
+    && previewJob.variants.length > 1
+    && (previewJob.kind === 'image' || previewJob.kind === 'gif')
+    && previewJob.variants.every((variant) => !isPdfVariant(variant)),
+  )
 
   useEffect(() => {
     if (previewJobId && !previewableJobs.some((job) => job.id === previewJobId)) setPreviewJobId(null)
   }, [previewJobId, previewableJobs])
+
+  useEffect(() => {
+    setComparisonView({ scale: 1, x: 0, y: 0 })
+    comparisonDragRef.current = null
+  }, [previewJobId])
   const isProcessing = jobs.some((job) => job.status === 'queued' || job.status === 'processing')
   const originalTotal = completedJobs.reduce((sum, job) => sum + job.file.size, 0)
   const resultTotal = completedJobs.reduce((sum, job) => sum + (job.resultBlob?.size ?? 0), 0)
@@ -1226,7 +1341,7 @@ function App() {
     event.preventDefault()
     dragDepthRef.current = 0
     setIsDragging(false)
-    addFiles(Array.from(event.dataTransfer.files))
+    void addFiles(Array.from(event.dataTransfer.files))
   }, [addFiles])
 
   const enterDropTarget = useCallback((event: React.DragEvent) => {
@@ -1262,8 +1377,24 @@ function App() {
     queueRef.current = []
     setJobs([])
     setNotice(null)
+    setReprocessVisible(false)
+    setReprocessReady(false)
     setDonatePanelState('closed')
   }, [isProcessing, jobs, revokeUrl])
+
+  const markPreferencesChanged = useCallback(() => {
+    if (jobs.length === 0) return
+    setReprocessVisible(true)
+    setReprocessReady(true)
+  }, [jobs.length])
+
+  const reprocessAllJobs = useCallback(async () => {
+    if (!reprocessReady || isProcessing || jobs.length === 0) return
+    setReprocessReady(false)
+    const origins = Array.from(new Set(jobs.map((job) => job.originFile)))
+    const replaced = await addFiles(origins, true)
+    if (!replaced) setReprocessReady(true)
+  }, [addFiles, isProcessing, jobs, reprocessReady])
 
   const downloadJob = useCallback((job: MediaJob, selectedVariant?: ResultVariant) => {
     const variant = selectedVariant ?? job.variants.find((item) => item.preset === 'balanced') ?? job.variants[0]
@@ -1278,7 +1409,7 @@ function App() {
     download(resultUrl, outputName)
   }, [messages.failed])
 
-  const downloadAll = useCallback(async (choice: QualityPreset | 'all') => {
+  const downloadAll = useCallback(async () => {
     if (completedJobs.length === 0 || isProcessing || isZipping) return
     setIsZipping(true)
     setNotice(null)
@@ -1286,11 +1417,7 @@ function App() {
       const names = new Map<string, number>()
       const entries: Record<string, Uint8Array> = {}
       for (const job of completedJobs) {
-        const available = job.variants.length > 0
-          ? choice === 'all'
-            ? job.variants
-            : [job.variants.find((variant) => variant.preset === choice) ?? job.variants[0]]
-          : []
+        const available = job.variants.length > 0 ? job.variants : []
         const selected = available.length > 0
           ? available
           : [{ blob: job.resultBlob!, outputName: job.outputName ?? `${baseName(job.file.name)}-压缩` }]
@@ -1326,25 +1453,63 @@ function App() {
       setNotice(messages.packageFailed)
     } finally {
       setIsZipping(false)
-      setZipChoiceOpen(false)
     }
   }, [completedJobs, isProcessing, isZipping, messages.packageFailed, openDonatePanel])
 
   const startPackageDownload = useCallback(() => {
-    if (completedJobs.some((job) => job.variants.length > 1)) setZipChoiceOpen(true)
-    else void downloadAll('all')
-  }, [completedJobs, downloadAll])
+    void downloadAll()
+  }, [downloadAll])
+
+  const zoomComparison = useCallback((nextScale: number) => {
+    setComparisonView((current) => ({ ...current, scale: Math.max(1, Math.min(5, nextScale)) }))
+  }, [])
+
+  const beginComparisonDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    comparisonDragRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      x: comparisonView.x,
+      y: comparisonView.y,
+    }
+  }, [comparisonView.x, comparisonView.y])
+
+  const moveComparisonDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = comparisonDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    setComparisonView((current) => ({
+      ...current,
+      x: drag.x + event.clientX - drag.clientX,
+      y: drag.y + event.clientY - drag.clientY,
+    }))
+  }, [])
+
+  const endComparisonDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (comparisonDragRef.current?.pointerId !== event.pointerId) return
+    comparisonDragRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }, [])
+
+  const wheelComparison = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setComparisonView((current) => ({
+      ...current,
+      scale: Math.max(1, Math.min(5, current.scale + (event.deltaY < 0 ? 0.25 : -0.25))),
+    }))
+  }, [])
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label={messages.homeLabel}>
-          <span className="brand-mark">
+        <a className="brand" href="#top" aria-label={messages.homeLabel} onClick={replayBrandBounce}>
+          <span className="brand-mark brand-mark-in" ref={brandMarkRef}>
             <img src={theme === 'dark' ? '/brand/robot-paper-dark.png' : '/brand/robot-paper-light.png'} alt="" />
           </span>
           <span>
             <strong><SoftBlurTitle text="文件压缩大救星" /></strong>
-            <small>Compreesor</small>
+            <small>Compressor Studio</small>
           </span>
         </a>
         <div className="topbar-actions">
@@ -1405,7 +1570,7 @@ function App() {
             multiple
             hidden
             onChange={(event) => {
-              addFiles(Array.from(event.target.files ?? []))
+              void addFiles(Array.from(event.target.files ?? []))
               event.target.value = ''
             }}
           />
@@ -1415,9 +1580,21 @@ function App() {
             compressionPreset={compressionPreset}
             imageOutput={imageOutput}
             videoOutput={videoOutput}
-            onCompressionPresetChange={setCompressionPreset}
-            onImageOutputChange={setImageOutput}
-            onVideoOutputChange={setVideoOutput}
+            onCompressionPresetChange={(value) => {
+              setCompressionPreset(value)
+              markPreferencesChanged()
+            }}
+            onImageOutputChange={(value) => {
+              setImageOutput(value)
+              markPreferencesChanged()
+            }}
+            onVideoOutputChange={(value) => {
+              setVideoOutput(value)
+              markPreferencesChanged()
+            }}
+            showReprocess={reprocessVisible}
+            reprocessDisabled={!reprocessReady || isProcessing}
+            onReprocess={() => void reprocessAllJobs()}
           />
 
           {jobs.length === 0 && (
@@ -1491,8 +1668,12 @@ function App() {
                 {jobs.map((job) => {
                   const outputBytes = job.resultBlob?.size ?? 0
                   const outputRatio = outputBytes > 0 ? Math.round((outputBytes / job.file.size) * 100) : 0
+                  const extremeVariant = job.variants.find((variant) => variant.preset === 'extreme')
+                  const losslessVariant = job.variants.find((variant) => variant.preset === 'lossless')
+                  const extremeRatio = extremeVariant ? Math.round((extremeVariant.blob.size / job.file.size) * 100) : 0
+                  const losslessRatio = losslessVariant ? Math.round((losslessVariant.blob.size / job.file.size) * 100) : 0
                   return (
-                    <article className={`job-row status-${job.status}`} key={job.id}>
+                    <article className={`job-row status-${job.status}${job.variants.length > 1 ? ' has-variants' : ''}`} key={job.id}>
                       <div className="thumbnail" aria-hidden="true">
                         {job.thumbnailUrl ? (
                           <img src={job.thumbnailUrl} alt="" />
@@ -1513,16 +1694,6 @@ function App() {
                             ? `${formatBytes(job.file.size)} → ${formatBytes(job.resultBlob.size)}`
                             : formatBytes(job.file.size)}
                         </p>
-                        {job.status === 'done' && job.variants.length > 1 && (
-                          <div className="variant-size-strip">
-                            {job.variants.map((variant) => (
-                              <span key={variant.preset}>
-                                <b>{qualityLabel(variant.preset as QualityPreset, messages)}</b>
-                                {formatBytes(variant.blob.size)}
-                              </span>
-                            ))}
-                          </div>
-                        )}
                         <div
                           className="job-progress"
                           role="progressbar"
@@ -1541,6 +1712,39 @@ function App() {
                         )}
                       </div>
 
+                      {job.status === 'done' && job.variants.length > 1 && (
+                        <div className="variant-results" aria-label={messages.allQualities}>
+                          {job.variants.map((variant) => (
+                            <div className="variant-result-item" key={variant.preset} tabIndex={0}>
+                              <b>{qualityLabel(variant.preset as QualityPreset, messages)}</b>
+                              <small>{formatBytes(variant.blob.size)}</small>
+                              <div className="variant-hover-preview">
+                                <span className="actual-size-badge">1:1</span>
+                                {job.kind === 'video' ? (
+                                  variant.outputLabel === 'MP3'
+                                    ? <audio src={variant.url} controls />
+                                    : <video src={variant.url} muted playsInline />
+                                ) : isPdfVariant(variant) ? (
+                                  <iframe src={`${variant.url}#page=1&toolbar=0&navpanes=0`} title={`${qualityLabel(variant.preset as QualityPreset, messages)} PDF`} />
+                                ) : (
+                                  <div className="actual-size-viewport">
+                                    <img src={variant.url} alt={`${job.file.name} ${qualityLabel(variant.preset as QualityPreset, messages)}`} />
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => downloadJob(job, variant)}
+                                  aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}
+                                  title={messages.download}
+                                >
+                                  <DownloadSimple size={13} weight="bold" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <div className="job-state">
                         {job.status === 'processing' && (
                           <span className="processing-state" title={statusText(job, messages)}>
@@ -1558,8 +1762,8 @@ function App() {
                           <>
                             <CheckCircle size={18} weight="fill" />
                             <span title={job.outputLabel ?? undefined}>
-                              {job.allQualities
-                                ? messages.threeResults
+                              {job.allQualities && extremeVariant && losslessVariant
+                                ? <AnimatedPercentageRange from={extremeRatio} to={losslessRatio} />
                                 : job.kind === 'image' || job.kind === 'pdf'
                                   ? <AnimatedPercentage value={outputRatio} />
                                   : job.outputLabel}
@@ -1580,22 +1784,7 @@ function App() {
                             >
                               <Eye size={15} weight="bold" />
                             </button>
-                            {job.variants.length > 1 ? (
-                              <details className="variant-download-menu">
-                                <summary aria-label={`${messages.download} ${job.file.name}`} title={messages.download}>
-                                  <DownloadSimple size={15} weight="bold" />
-                                </summary>
-                                <div>
-                                  {job.variants.map((variant) => (
-                                    <button key={variant.preset} type="button" onClick={() => downloadJob(job, variant)}>
-                                      <span>{qualityLabel(variant.preset as QualityPreset, messages)}</span>
-                                      <small>{formatBytes(variant.blob.size)}</small>
-                                      <DownloadSimple size={13} weight="bold" />
-                                    </button>
-                                  ))}
-                                </div>
-                              </details>
-                            ) : (
+                            {job.variants.length <= 1 && (
                               <button
                                 type="button"
                                 onClick={() => downloadJob(job)}
@@ -1720,6 +1909,16 @@ function App() {
               <X size={16} weight="bold" />
             </button>
           </header>
+          {comparisonSupportsSync && (
+            <div className="comparison-toolbar">
+              <span>{messages.dragZoomHint}</span>
+              <div>
+                <button type="button" onClick={() => zoomComparison(comparisonView.scale - 0.25)} aria-label={messages.zoomOut} title={messages.zoomOut}>−</button>
+                <button type="button" onClick={() => setComparisonView({ scale: 1, x: 0, y: 0 })} aria-label={messages.zoomReset} title={messages.zoomReset}>{Math.round(comparisonView.scale * 100)}%</button>
+                <button type="button" onClick={() => zoomComparison(comparisonView.scale + 0.25)} aria-label={messages.zoomIn} title={messages.zoomIn}>＋</button>
+              </div>
+            </div>
+          )}
           {previewJob.variants.length > 1 ? (
             <div className="comparison-grid">
               {previewJob.variants.map((variant) => (
@@ -1739,10 +1938,24 @@ function App() {
                     ) : (
                       <video src={variant.url} controls playsInline />
                     )
-                  ) : previewJob.kind === 'pdf' ? (
+                  ) : isPdfVariant(variant) ? (
                     <iframe src={`${variant.url}#page=1&toolbar=0&navpanes=0`} title={`${qualityLabel(variant.preset as QualityPreset, messages)} PDF`} />
                   ) : (
-                    <img src={variant.url} alt={`${previewJob.file.name} ${qualityLabel(variant.preset as QualityPreset, messages)}`} />
+                    <div
+                      className="comparison-image-stage"
+                      onPointerDown={beginComparisonDrag}
+                      onPointerMove={moveComparisonDrag}
+                      onPointerUp={endComparisonDrag}
+                      onPointerCancel={endComparisonDrag}
+                      onWheel={wheelComparison}
+                    >
+                      <img
+                        src={variant.url}
+                        alt={`${previewJob.file.name} ${qualityLabel(variant.preset as QualityPreset, messages)}`}
+                        draggable={false}
+                        style={{ transform: `translate3d(${comparisonView.x}px, ${comparisonView.y}px, 0) scale(${comparisonView.scale})` }}
+                      />
+                    </div>
                   )}
                 </article>
               ))}
@@ -1753,7 +1966,7 @@ function App() {
             ) : (
               <video key={previewJob.resultUrl} src={previewJob.resultUrl} controls autoPlay playsInline />
             )
-          ) : previewJob.kind === 'pdf' ? (
+          ) : previewJob.kind === 'pdf' || previewJob.outputLabel === 'PDF' ? (
             <iframe className="pdf-preview-frame" src={`${previewJob.resultUrl}#page=1&toolbar=0&navpanes=0`} title={previewJob.outputName ?? previewJob.file.name} />
           ) : (
             <div className="image-preview-stage">
@@ -1779,36 +1992,6 @@ function App() {
             </div>
           )}
         </aside>
-      )}
-
-      {zipChoiceOpen && (
-        <div className="package-choice-overlay" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget && !isZipping) setZipChoiceOpen(false)
-        }}>
-          <section className="package-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="package-choice-title">
-            <header>
-              <div>
-                <h2 id="package-choice-title">{messages.packageWhich}</h2>
-                <p>{messages.packageWhichHint}</p>
-              </div>
-              <button type="button" onClick={() => setZipChoiceOpen(false)} disabled={isZipping} aria-label={messages.closePreview}>
-                <X size={17} weight="bold" />
-              </button>
-            </header>
-            <div className="package-choice-grid">
-              {QUALITY_PRESETS.map((preset) => (
-                <button key={preset} type="button" onClick={() => void downloadAll(preset)} disabled={isZipping}>
-                  <strong>{qualityLabel(preset, messages)}</strong>
-                  <span>{messages.packageOneQuality}</span>
-                </button>
-              ))}
-              <button className="all" type="button" onClick={() => void downloadAll('all')} disabled={isZipping}>
-                <strong>{messages.allQualities}</strong>
-                <span>{messages.packageAllQualities}</span>
-              </button>
-            </div>
-          </section>
-        </div>
       )}
 
       {cliGuideOpen && (
