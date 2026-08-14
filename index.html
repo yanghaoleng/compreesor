@@ -3,16 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%23071125'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='Arial' font-size='34' font-weight='700' fill='white'%3EC%3C/text%3E%3C/svg%3E" />
+    <link rel="icon" type="image/png" href="/brand/robot-paper-light.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/png" href="/brand/robot-paper-dark.png" media="(prefers-color-scheme: dark)" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#d3f1ff" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
-    <meta name="description" content="在线压缩 JPG、PNG、WebP、AVIF、JXL、SVG、GIF 和视频，支持 SVG 矢量优化、图片格式转换、视频转 MP4、MOV 与提取 MP3。" />
-    <meta name="keywords" content="图片压缩,SVG压缩,SVGO,在线图片压缩,GIF压缩,视频压缩,视频转MP4,MOV透明通道,视频提取MP3,PNG转JPG,图片转WebP,批量压缩文件" />
+    <meta name="description" content="文件压缩大救星：在线压缩图片、SVG、GIF、PDF 和视频，支持三档质量对比、按 100KB 至 10MB 目标体积自动调节，并可提取 MP3。" />
+    <meta name="keywords" content="文件压缩大救星,PDF压缩,图片压缩,SVG压缩,在线图片压缩,GIF压缩,视频压缩,压缩到100KB,压缩到2MB,视频转MP4,MOV透明通道,视频提取MP3,批量压缩文件" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Compreesor 在线图片、SVG、GIF 与视频压缩工具" />
-    <meta property="og:description" content="批量压缩图片、GIF 与视频，支持格式转换、MP3 提取、单个下载和 ZIP 打包下载。" />
+    <meta property="og:title" content="文件压缩大救星｜图片、PDF、GIF 与视频压缩" />
+    <meta property="og:description" content="一次生成极限、够用、无损三档结果，或按平台文件大小限制自动压缩。" />
     <meta property="og:url" content="https://compreesor.mikeywa.icu/" />
-    <meta property="og:site_name" content="Compreesor" />
+    <meta property="og:site_name" content="文件压缩大救星" />
     <meta name="twitter:card" content="summary" />
     <link rel="canonical" href="https://compreesor.mikeywa.icu/" />
     <link rel="alternate" hreflang="zh-CN" href="https://compreesor.mikeywa.icu/" />
@@ -20,29 +22,29 @@
     <link rel="alternate" hreflang="en" href="https://compreesor.mikeywa.icu/?lang=en" />
     <link rel="alternate" hreflang="ja" href="https://compreesor.mikeywa.icu/?lang=ja" />
     <link rel="alternate" hreflang="x-default" href="https://compreesor.mikeywa.icu/" />
-    <title>在线图片、SVG、GIF 与视频压缩工具｜提取 MP3 - Compreesor</title>
+    <title>文件压缩大救星｜图片、PDF、GIF 与视频压缩</title>
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@graph": [
           {
             "@type": "WebApplication",
-            "name": "Compreesor",
+            "name": "文件压缩大救星",
             "url": "https://compreesor.mikeywa.icu/",
             "applicationCategory": "MultimediaApplication",
             "operatingSystem": "Any",
             "browserRequirements": "Requires a modern browser with WebAssembly support",
             "inLanguage": ["zh-CN", "zh-Hant", "en", "ja"],
-            "description": "压缩位图、SVG、GIF 和视频，转换图片与视频格式，并从视频提取 MP3 的在线工具。",
-            "featureList": ["SVG 矢量压缩", "图片压缩与 JPG、WebP、PNG 转换", "GIF 压缩", "视频压缩与 MP4、MOV 转换", "透明通道 MOV 输出", "从视频提取 MP3", "批量 ZIP 下载"],
+            "description": "压缩图片、SVG、GIF、PDF 和视频，支持三档质量比较、目标体积压缩、格式转换与 MP3 提取。",
+            "featureList": ["PDF 压缩", "100KB 至 10MB 目标体积压缩", "极限、够用、无损三档比较", "SVG 矢量压缩", "图片格式转换", "GIF 压缩", "视频压缩与 MP3 提取", "批量 ZIP 下载"],
             "author": { "@type": "Person", "url": "https://mikeywa.icu/" }
           },
           {
             "@type": "HowTo",
-            "name": "如何压缩图片、GIF 或视频",
+            "name": "如何压缩图片、PDF、GIF 或视频",
             "step": [
               { "@type": "HowToStep", "name": "选择输出格式", "text": "设置图片或视频的输出格式。" },
-              { "@type": "HowToStep", "name": "添加文件", "text": "选择文件，或将图片、GIF、视频拖入页面。" },
+              { "@type": "HowToStep", "name": "添加文件", "text": "选择文件，或将图片、PDF、GIF、视频拖入页面。" },
               { "@type": "HowToStep", "name": "下载结果", "text": "完成后单独下载，或打包下载全部结果。" }
             ]
           }
@@ -54,8 +56,8 @@
     <div id="root"></div>
     <noscript>
       <main>
-        <h1>在线压缩图片、SVG、GIF 和视频</h1>
-        <p>支持 JPG、PNG、WebP、AVIF、JXL、SVG、GIF 与常见视频格式，可压缩 SVG 并转换为 JPG、WebP、PNG，也可压缩视频或提取 MP3。</p>
+        <h1>文件压缩大救星</h1>
+        <p>支持 JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 与常见视频格式，可一次比较三档压缩结果，也可按目标体积自动优化。</p>
         <p>选择输出格式并添加文件，完成后可单独下载或打包下载。</p>
       </main>
     </noscript>

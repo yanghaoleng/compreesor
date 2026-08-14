@@ -16,7 +16,11 @@ page.on('console', (message) => {
 await page.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await page.getByRole('heading', { name: '输出偏好' }).waitFor()
 if ((await page.locator('.preferences select').count()) !== 3) throw new Error('Output preferences or compression preset are missing before upload')
-if (await page.locator('.preferences select').nth(0).inputValue() !== 'balanced') throw new Error('Compression should default to Balanced')
+if (await page.locator('.preferences select').nth(0).inputValue() !== 'all') throw new Error('Compression should default to all three qualities')
+if ((await page.locator('.preferences select').nth(0).locator('option').count()) !== 9) throw new Error('Compression presets should include three qualities and five target sizes')
+if ((await page.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompreesor') throw new Error('Brand name is incorrect')
+if (!(await page.locator('.brand-mark img').getAttribute('src'))?.includes('robot-paper-')) throw new Error('Robot paper icon is missing')
+await page.locator('.preferences select').nth(0).selectOption('balanced')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
   throw new Error('Original image output copy is incorrect')
 }
@@ -212,6 +216,7 @@ await page.screenshot({ path: '/tmp/compreesor-desktop.png', fullPage: true })
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })
 await mobile.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await mobile.getByRole('heading', { name: '输出偏好' }).waitFor()
+await mobile.locator('.preferences select').nth(0).selectOption('balanced')
 const bodyWidth = await mobile.evaluate(() => document.body.scrollWidth)
 if (bodyWidth > 390) throw new Error(`Mobile layout overflows: ${bodyWidth}px`)
 await mobile.screenshot({ path: '/tmp/compreesor-mobile.png', fullPage: true })
@@ -262,6 +267,7 @@ if (!(await guidePage.getByRole('dialog').innerText()).includes('--preset extrem
 
 const dropPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await dropPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await dropPage.locator('.preferences select').nth(0).selectOption('balanced')
 await dropPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
 await dropPage.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 1, undefined, { timeout: 180_000 })
 const transfer = await dropPage.evaluateHandle(() => new DataTransfer())
@@ -278,6 +284,7 @@ await dropPage.waitForFunction(() => document.querySelectorAll('.job-row.status-
 
 const audioPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await audioPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await audioPage.locator('.preferences select').nth(0).selectOption('balanced')
 if (!(await audioPage.locator('.preferences select').nth(2).locator('option[value="mp3"]').innerText()).includes('提取 MP3')) {
   throw new Error('MP3 option label is incorrect')
 }
@@ -306,6 +313,7 @@ if (extractedAudio.suggestedFilename() !== 'compreesor-video-压缩.mp3') {
 
 const alphaPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await alphaPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await alphaPage.locator('.preferences select').nth(0).selectOption('balanced')
 await alphaPage.locator('.preferences select').nth(2).selectOption('mov-alpha')
 await alphaPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-alpha.mov')
 await alphaPage.waitForFunction(
@@ -349,6 +357,7 @@ if (jpegImage.suggestedFilename() !== 'compreesor-fixture-压缩.jpg') {
 
 const svgPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await svgPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await svgPage.locator('.preferences select').nth(0).selectOption('balanced')
 await svgPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
 await svgPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
@@ -389,6 +398,7 @@ await svgPage.screenshot({ path: '/tmp/compreesor-svg.png', fullPage: true })
 
 const svgPngPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await svgPngPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await svgPngPage.locator('.preferences select').nth(0).selectOption('balanced')
 await svgPngPage.locator('.preferences select').nth(1).selectOption('png')
 await svgPngPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
 await svgPngPage.waitForFunction(

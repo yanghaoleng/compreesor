@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "cli:test": "npm --prefix packages/cli test",
     "desktop:dev": "npm --prefix apps/desktop start",
-    "desktop:dist": "npm --prefix apps/desktop run dist"
+    "desktop:dist": "npm --prefix apps/desktop run dist",
+    "e2e:pdf": "node tests/pdf-e2e.mjs",
+    "e2e:electron": "node tests/electron-e2e.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
@@ -29,6 +31,8 @@
     "@phosphor-icons/react": "^2.1.10",
     "@vercel/analytics": "^2.0.1",
     "fflate": "^0.8.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "svgo": "^4.0.2"

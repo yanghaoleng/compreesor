@@ -1,6 +1,6 @@
-# Compreesor
+# 文件压缩大救星 · Compreesor
 
-一个轻量、开源、可商用的图片、SVG、GIF 与视频压缩工具，包含网页版、npm CLI 和 Electron 桌面版。
+一个轻量、开源、可商用的图片、SVG、GIF、PDF 与视频压缩工具，包含网页版、npm CLI 和 Electron 桌面版。
 
 - 在线使用：[compreesor.mikeywa.icu](https://compreesor.mikeywa.icu/)
 - npm CLI：[compreesor-cli](https://www.npmjs.com/package/compreesor-cli)
@@ -9,15 +9,17 @@
 ## 网页版
 
 - JPG、PNG、WebP、AVIF、JXL、SVG 默认保持原格式，也可统一转为 JPG、WebP 或 PNG
-- 全局提供极限、够用、无损三档压缩比例，默认使用够用，并按图片、SVG、GIF、视频与 MP3 分别选择参数
+- 默认“我都要”会同时生成极限、够用、无损三档结果，可在比较窗预览并按档位下载
+- 也可选择 100KB、500KB、2MB、5MB、10MB 目标体积，自动反推图片尺寸与画质、PDF 页分辨率、视频和音频码率
+- PDF 支持无损结构整理与逐页压缩，并提供首页缩略图、预览和打包下载
 - SVG 使用 SVGO 多轮优化；GIF 保留动画；视频可转 MP4、MOV、透明 MOV，或提取 MP3
 - 添加文件后自动处理，静态图片双路并发；显示缩略图、进度和压缩前后体积
-- 压缩率使用数字增长动画，结果可单独下载或打包下载
+- 压缩率使用数字增长动画，结果可单独下载；三档模式打包时可选择统一质量或全部结果
 - 下载按钮左侧提供预览；图片和 GIF 在左下角小窗翻页，视频与 MP3 可直接播放
 - 文件列表出现后仍可继续拖入，支持简体中文、繁体中文、英文、日文和明暗主题
 - 右下角为打赏作者入口，打包下载后自动展开；每次展示会随机送出一条不连续重复的夸赞与祝福，并使用逐词 `spring-scale-in` 入场
 
-静态位图使用 jSquash WebAssembly，SVG 使用 SVGO，GIF 和视频使用 ffmpeg.wasm。若重新编码后体积更大，会保留较小的原文件。
+静态位图使用 jSquash WebAssembly，SVG 使用 SVGO，PDF 使用 PDF.js 与 pdf-lib，GIF 和视频使用 ffmpeg.wasm。若重新编码后体积更大，会保留较小的原文件。
 
 ## CLI
 
@@ -48,7 +50,7 @@ GIF 与视频需要本机安装 FFmpeg；macOS 可运行 `brew install ffmpeg`�
 
 ## Electron 桌面版
 
-桌面版直接复用网页版界面与处理流程，包括三档压缩、图片、SVG、GIF、视频、MP3、透明 MOV、预览、打赏、CLI 说明、作者主页、多语言和明暗主题。拖入后自动处理，并在成功后安全替换原路径文件；转换格式时仍保存在原目录，并同步更改扩展名。
+桌面版直接复用网页版界面与处理流程，包括三档压缩、目标体积、图片、SVG、GIF、PDF、视频、MP3、透明 MOV、预览、打赏、CLI 说明、作者主页、多语言和明暗主题。单档模式成功后安全替换原路径文件；默认三档模式会把三份结果写入源文件所在文件夹并保留源文件。
 
 ```bash
 cd apps/desktop
@@ -71,6 +73,7 @@ npm run lint
 npm run build
 npm run cli:test
 node tests/e2e.mjs
+npm run e2e:pdf
 ```
 
 ## License

@@ -1,5 +1,5 @@
 import type { FFmpeg } from '@ffmpeg/ffmpeg'
-import { MEDIA_PRESET_SETTINGS } from './compressionPresets'
+import { MEDIA_PRESET_SETTINGS, qualityPresetFor, targetBytesForPreset } from './compressionPresets'
 import type { CompressionPreset } from './types'
 
 export type VideoOutputPreference = 'original' | 'mp4' | 'mov' | 'mov-alpha' | 'mp3'
@@ -9,6 +9,15 @@ type MediaOutput = {
   blob: Blob
   extension: string
   label: string
+}
+
+type TargetVideoProfile = {
+  maxHeight: number
+  fps: number
+  videoBitrate: string
+  maxRate: string
+  bufferSize: string
+  audioBitrate: string
 }
 
 let ffmpegInstance: FFmpeg | null = null
@@ -55,6 +64,53 @@ function mimeType(extension: string) {
   if (extension === 'avi') return 'video/x-msvideo'
   if (extension === 'mpg' || extension === 'mpeg') return 'video/mpeg'
   return 'video/mp4'
+}
+
+async function mediaDuration(file: File) {
+  const url = URL.createObjectURL(file)
+  const media = document.createElement(file.type.startsWith('audio/') ? 'audio' : 'video')
+  media.preload = 'metadata'
+  media.src = url
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error('无法读取媒体时长')), 12000)
+      media.onloadedmetadata = () => {
+        window.clearTimeout(timer)
+        resolve()
+      }
+      media.onerror = () => {
+        window.clearTimeout(timer)
+        reject(new Error('无法读取媒体时长'))
+      }
+    })
+    return Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 1
+  } finally {
+    media.removeAttribute('src')
+    media.load()
+    URL.revokeObjectURL(url)
+  }
+}
+
+function targetVideoProfile(targetBytes: number, duration: number): TargetVideoProfile {
+  const totalKbps = Math.max(72, Math.floor((targetBytes * 8 * 0.92) / Math.max(duration, 1) / 1000))
+  const audioKbps = totalKbps < 180 ? 40 : totalKbps < 420 ? 64 : totalKbps < 900 ? 80 : 96
+  const videoKbps = Math.max(48, totalKbps - audioKbps)
+  const maxHeight = videoKbps < 220 ? 240 : videoKbps < 420 ? 360 : videoKbps < 850 ? 480 : 720
+  const fps = videoKbps < 260 ? 18 : videoKbps < 650 ? 24 : 30
+  return {
+    maxHeight,
+    fps,
+    videoBitrate: `${videoKbps}k`,
+    maxRate: `${Math.max(videoKbps, Math.round(videoKbps * 1.08))}k`,
+    bufferSize: `${Math.max(128, videoKbps * 2)}k`,
+    audioBitrate: `${audioKbps}k`,
+  }
+}
+
+function targetMp3Bitrate(targetBytes: number, duration: number) {
+  const ideal = Math.floor((targetBytes * 8 * 0.95) / Math.max(duration, 1) / 1000)
+  const candidates = [320, 256, 192, 160, 128, 112, 96, 80, 64, 48, 40, 32]
+  return `${candidates.find((value) => value <= ideal) ?? 32}k`
 }
 
 async function transcode(
@@ -117,8 +173,10 @@ function videoCommand(
   preset: CompressionPreset,
   inputName: string,
   outputName: string,
+  targetProfile?: TargetVideoProfile,
 ) {
-  const profile = MEDIA_PRESET_SETTINGS[preset]
+  const qualityPreset = qualityPresetFor(preset)
+  const profile = MEDIA_PRESET_SETTINGS[qualityPreset]
   if ('copy' in profile.video && !preserveAlpha) {
     return [
       '-i', inputName, '-map', '0', '-c', 'copy',
@@ -127,7 +185,8 @@ function videoCommand(
     ]
   }
 
-  const video = 'copy' in profile.video ? null : profile.video
+  const baseVideo = 'copy' in profile.video ? null : profile.video
+  const video = targetProfile ?? baseVideo
   const filter = video
     ? `scale=min(${Math.round(video.maxHeight * 16 / 9)}\\,iw):min(${video.maxHeight}\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,fps=${video.fps}`
     : null
@@ -153,19 +212,19 @@ function videoCommand(
   if (extension === 'avi') {
     return [
       '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
-      '-c:v', 'mpeg4', '-q:v', preset === 'extreme' ? '10' : '8', '-c:a', 'libmp3lame', '-b:a', audioBitrate, outputName,
+      '-c:v', 'mpeg4', ...(targetProfile ? ['-b:v', targetProfile.videoBitrate] : ['-q:v', qualityPreset === 'extreme' ? '10' : '8']), '-c:a', 'libmp3lame', '-b:a', audioBitrate, outputName,
     ]
   }
   if (extension === 'mpg' || extension === 'mpeg') {
     return [
       '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
-      '-c:v', 'mpeg2video', '-q:v', preset === 'extreme' ? '12' : '8', '-c:a', 'mp2', '-b:a', audioBitrate, outputName,
+      '-c:v', 'mpeg2video', ...(targetProfile ? ['-b:v', targetProfile.videoBitrate] : ['-q:v', qualityPreset === 'extreme' ? '12' : '8']), '-c:a', 'mp2', '-b:a', audioBitrate, outputName,
     ]
   }
   if (!video) throw new Error('无法创建无损视频命令')
   return [
     '-i', inputName, '-map', '0:v:0', '-map', '0:a?', ...filterArgs,
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(video.crf),
+    '-c:v', 'libx264', '-preset', 'veryfast', ...(targetProfile ? ['-b:v', targetProfile.videoBitrate] : ['-crf', String(baseVideo!.crf)]),
     '-maxrate', video.maxRate, '-bufsize', video.bufferSize, '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', video.audioBitrate, '-ac', '2', '-metadata:s:v:0', 'rotate=0',
     '-movflags', '+faststart', outputName,
@@ -178,7 +237,21 @@ export function compressGif(
   preset: CompressionPreset,
   onProgress: ProgressReporter,
 ) {
-  const gif = MEDIA_PRESET_SETTINGS[preset].gif
+  const targetBytes = targetBytesForPreset(preset)
+  if (targetBytes && file.size <= targetBytes) {
+    onProgress(100, '原文件已满足目标体积')
+    return Promise.resolve(file as Blob)
+  }
+  const baseGif = MEDIA_PRESET_SETTINGS[qualityPresetFor(preset)].gif
+  const gif = targetBytes
+    ? targetBytes <= 100 * 1024
+      ? { fps: 6, maxDimension: 320, maxColors: 32, dither: 'none' as const }
+      : targetBytes <= 500 * 1024
+        ? { fps: 8, maxDimension: 480, maxColors: 48, dither: 'none' as const }
+        : targetBytes <= 2 * 1024 * 1024
+          ? { fps: 10, maxDimension: 720, maxColors: 96, dither: 'bayer' as const }
+          : { fps: 12, maxDimension: 960, maxColors: 128, dither: 'bayer' as const }
+    : baseGif
   if ('copy' in gif) {
     onProgress(100, '已保留原始 GIF')
     return Promise.resolve(file as Blob)
@@ -211,21 +284,31 @@ export async function compressVideo(
   preset: CompressionPreset,
   onProgress: ProgressReporter,
 ): Promise<MediaOutput> {
+  const targetBytes = targetBytesForPreset(preset)
+  if (targetBytes && file.size <= targetBytes && preference === 'original') {
+    onProgress(100, '原文件已满足目标体积')
+    return { blob: file, ...resolveOriginalVideoOutput(file) }
+  }
+  const qualityPreset = qualityPresetFor(preset)
+  const duration = targetBytes ? await mediaDuration(file) : 1
   if (preference === 'mp3') {
+    const bitrate = targetBytes
+      ? targetMp3Bitrate(targetBytes, duration)
+      : MEDIA_PRESET_SETTINGS[qualityPreset].mp3Bitrate
     const blob = await transcode(
       file,
       jobId,
       'mp3',
       '正在提取 MP3 音频',
       (inputName, outputName) => [
-        '-i', inputName, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', MEDIA_PRESET_SETTINGS[preset].mp3Bitrate, outputName,
+        '-i', inputName, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', bitrate, outputName,
       ],
       onProgress,
     )
     return { blob, extension: 'mp3', label: 'MP3' }
   }
 
-  if (preset === 'lossless' && preference === 'original') {
+  if (qualityPreset === 'lossless' && preference === 'original') {
     onProgress(100, '已保留原始视频')
     return { blob: file, ...resolveOriginalVideoOutput(file) }
   }
@@ -241,7 +324,14 @@ export async function compressVideo(
     jobId,
     output.extension,
     '正在压缩视频',
-    (inputName, outputName) => videoCommand(output.extension, preserveAlpha, preset, inputName, outputName),
+    (inputName, outputName) => videoCommand(
+      output.extension,
+      preserveAlpha,
+      preset,
+      inputName,
+      outputName,
+      targetBytes && !preserveAlpha ? targetVideoProfile(targetBytes, duration) : undefined,
+    ),
     onProgress,
   )
   return { blob, ...output }

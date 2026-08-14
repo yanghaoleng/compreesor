@@ -10,7 +10,7 @@ const capabilities = Object.freeze({
   ]),
   bufferReplacementExtensions: Object.freeze([
     'jpg', 'jpeg', 'png', 'webp', 'avif', 'jxl', 'svg', 'gif',
-    'mp4', 'mov', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'mp3',
+    'mp4', 'mov', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'mp3', 'pdf',
   ]),
 })
 
@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('compreesorDesktop', Object.freeze({
   pathForFile,
   compressFile: (payload) => ipcRenderer.invoke('desktop:compress-file', payload),
   replaceWithData: (payload) => ipcRenderer.invoke('desktop:replace-with-data', payload),
+  writeVariants: (payload) => ipcRenderer.invoke('desktop:write-variants', payload),
   readResultFile: (path) => ipcRenderer.invoke('desktop:read-result-file', path),
   revealResultFile: (path) => ipcRenderer.invoke('desktop:reveal-result-file', path),
 }))

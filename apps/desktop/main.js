@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { compressFile } from 'compreesor-cli/core'
-import { mimeTypeForPath, readResultFile, replaceFileWithData } from './native-files.js'
+import { mimeTypeForPath, readResultFile, replaceFileWithData, writeVariantFiles } from './native-files.js'
 import { DESKTOP_ORIGIN, DESKTOP_SCHEME, resolveWebAssetPath } from './web-protocol.js'
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url))
@@ -99,6 +99,12 @@ ipcMain.handle('desktop:replace-with-data', async (_event, payload) => {
   const result = await replaceFileWithData(payload?.sourcePath, payload?.outputExtension, payload?.data)
   approvedResultPaths.add(resolve(result.outputPath))
   return result
+})
+
+ipcMain.handle('desktop:write-variants', async (_event, payload) => {
+  const results = await writeVariantFiles(payload?.sourcePath, payload?.variants)
+  results.forEach((result) => approvedResultPaths.add(resolve(result.outputPath)))
+  return results
 })
 
 ipcMain.handle('desktop:read-result-file', async (_event, candidate) => {

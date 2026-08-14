@@ -52,6 +52,10 @@ export type CompreesorDesktopBridge = {
     outputExtension: string
     data: ArrayBuffer | Uint8Array
   }): Promise<DesktopCompressionResult>
+  writeVariants(payload: {
+    sourcePath: string
+    variants: Array<{ outputName: string; data: ArrayBuffer | Uint8Array }>
+  }): Promise<DesktopCompressionResult[]>
   readResultFile(path: string): Promise<DesktopResultFile>
   revealResultFile(path: string): Promise<boolean>
 }

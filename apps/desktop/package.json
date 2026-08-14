@@ -1,6 +1,6 @@
 {
   "name": "compreesor-desktop",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Compreesor desktop app for drag-and-drop image compression and conversion.",
   "type": "module",
   "main": "main.js",
@@ -44,6 +44,7 @@
     ],
     "mac": {
       "category": "public.app-category.graphics-design",
+      "icon": "build/icon.icns",
       "identity": "-",
       "hardenedRuntime": false,
       "target": [

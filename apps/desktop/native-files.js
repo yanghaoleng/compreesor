@@ -4,7 +4,7 @@ import { basename, dirname, extname, join, parse, resolve } from 'node:path'
 
 const OUTPUT_EXTENSIONS = new Set([
   'jpg', 'jpeg', 'png', 'webp', 'avif', 'jxl', 'svg', 'gif',
-  'mp4', 'mov', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'mp3',
+  'mp4', 'mov', 'webm', 'mkv', 'avi', 'mpg', 'mpeg', 'mp3', 'pdf',
 ])
 
 const MIME_TYPES = new Map([
@@ -24,6 +24,7 @@ const MIME_TYPES = new Map([
   ['.mpg', 'video/mpeg'],
   ['.mpeg', 'video/mpeg'],
   ['.mp3', 'audio/mpeg'],
+  ['.pdf', 'application/pdf'],
 ])
 
 async function exists(filePath) {
@@ -109,4 +110,52 @@ export async function replaceFileWithData(source, outputExtension, value) {
     }
     throw error
   }
+}
+
+export async function writeVariantFiles(source, variants) {
+  const sourcePath = resolve(source)
+  const sourceInfo = await stat(sourcePath)
+  if (!sourceInfo.isFile()) throw new Error('源路径不是文件')
+  if (!Array.isArray(variants) || variants.length === 0) throw new Error('没有可保存的压缩结果')
+
+  const directory = dirname(sourcePath)
+  const prepared = variants.map((variant) => {
+    const requestedName = String(variant?.outputName ?? '')
+    const outputName = basename(requestedName)
+    if (!outputName || requestedName !== outputName) throw new Error('压缩结果文件名无效')
+    normalizeOutputExtension(extname(outputName))
+    const data = bytesFrom(variant?.data)
+    if (data.byteLength === 0) throw new Error('压缩结果为空，未保存')
+    return { outputName, targetPath: join(directory, outputName), data }
+  })
+  if (new Set(prepared.map((item) => item.targetPath)).size !== prepared.length) throw new Error('压缩结果文件名重复')
+  for (const item of prepared) {
+    if (await exists(item.targetPath)) throw new Error(`目标文件已存在，未保存：${item.targetPath}`)
+  }
+
+  const temporaryPaths = []
+  const completedPaths = []
+  try {
+    for (const item of prepared) {
+      const temporaryPath = join(directory, `.${item.outputName}.compreesor-${randomUUID()}`)
+      temporaryPaths.push(temporaryPath)
+      await writeFile(temporaryPath, item.data, { flag: 'wx', mode: sourceInfo.mode })
+      await rename(temporaryPath, item.targetPath)
+      completedPaths.push(item.targetPath)
+    }
+  } catch (error) {
+    await Promise.all([...temporaryPaths, ...completedPaths].map((filePath) => rm(filePath, { force: true })))
+    throw error
+  }
+
+  return prepared.map((item) => ({
+    inputPath: sourcePath,
+    outputPath: item.targetPath,
+    outputName: item.outputName,
+    originalBytes: sourceInfo.size,
+    outputBytes: item.data.byteLength,
+    unchanged: false,
+    sourceRemoved: false,
+    mimeType: mimeTypeForPath(item.targetPath),
+  }))
 }

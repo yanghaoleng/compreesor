@@ -7,6 +7,7 @@ import {
   normalizeOutputExtension,
   readResultFile,
   replaceFileWithData,
+  writeVariantFiles,
 } from '../native-files.js'
 import { resolveWebAssetPath } from '../web-protocol.js'
 
@@ -58,5 +59,20 @@ await assert.rejects(
 assert.equal((await readFile(collisionSource)).toString(), 'keep-source')
 assert.equal((await readFile(collisionTarget)).toString(), 'keep-target')
 assert.ok(!(await readdir(directory)).some((name) => name.includes('compreesor-')))
+
+const variantSource = join(directory, 'variants.png')
+await writeFile(variantSource, Buffer.from('source-stays'))
+const variants = await writeVariantFiles(variantSource, [
+  { outputName: 'variants-极限-压缩.png', data: new Uint8Array([1, 1]) },
+  { outputName: 'variants-够用-压缩.png', data: new Uint8Array([2, 2, 2]) },
+  { outputName: 'variants-无损-压缩.png', data: new Uint8Array([3, 3, 3, 3]) },
+])
+assert.equal(variants.length, 3)
+assert.equal((await readFile(variantSource)).toString(), 'source-stays')
+assert.deepEqual(await readFile(variants[1].outputPath), Buffer.from([2, 2, 2]))
+await assert.rejects(
+  writeVariantFiles(variantSource, [{ outputName: 'variants-够用-压缩.png', data: new Uint8Array([9]) }]),
+  /目标文件已存在/,
+)
 
 console.log('Desktop native file tests passed')
