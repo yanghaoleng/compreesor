@@ -51,14 +51,11 @@
   filter: drop-shadow(0 5px 8px rgba(19, 37, 70, 0.16));
 }
 
-.brand-mark-in {
+.brand-mark-in,
+.brand-mark-replay {
   animation:
     brand-mark-drop-in 720ms cubic-bezier(0.22, 0.85, 0.25, 1) both,
     brand-mark-bounce 540ms 720ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-}
-
-.brand-mark-replay {
-  animation: brand-mark-bounce 540ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes brand-mark-drop-in {

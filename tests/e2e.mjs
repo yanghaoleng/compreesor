@@ -33,10 +33,23 @@ await page.waitForFunction(() => document.querySelector('.brand-mark')?.classLis
 const replayBrand = await page.locator('.brand-mark').evaluate((element) => ({
   animations: element.getAnimations().map((animation) => animation.animationName),
   stableNode: element.querySelector('img')?.dataset.stableNode,
-  opacity: getComputedStyle(element).opacity,
 }))
-if (replayBrand.stableNode !== 'true' || replayBrand.opacity !== '1' || replayBrand.animations.some((name) => name !== 'brand-mark-bounce')) {
-  throw new Error(`Brand click should replay bounce on the same image node: ${JSON.stringify(replayBrand)}`)
+if (
+  replayBrand.stableNode !== 'true'
+  || !replayBrand.animations.includes('brand-mark-drop-in')
+  || !replayBrand.animations.includes('brand-mark-bounce')
+) {
+  throw new Error(`Brand click should replay drop-in and bounce on the same image node: ${JSON.stringify(replayBrand)}`)
+}
+await page.locator('.brand-mark').evaluate(async (element) => {
+  await Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined)))
+})
+const settledBrand = await page.locator('.brand-mark').evaluate((element) => ({
+  opacity: getComputedStyle(element).opacity,
+  transform: getComputedStyle(element).transform,
+}))
+if (settledBrand.opacity !== '1' || (settledBrand.transform !== 'none' && settledBrand.transform !== 'matrix(1, 0, 0, 1, 0, 0)')) {
+  throw new Error(`Brand should settle after the replayed entrance: ${JSON.stringify(settledBrand)}`)
 }
 await page.locator('.preferences select').nth(0).selectOption('balanced')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
@@ -63,7 +76,17 @@ await englishMenuItem.hover()
 await page.waitForTimeout(200)
 const languageItemX = await englishMenuItem.evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m41)
 if (languageItemX < 1.5) throw new Error('Language menu item hover lacks horizontal feedback')
+await englishMenuItem.click()
+if ((await page.locator('.brand-title').getAttribute('aria-label')) !== 'File Compression Lifesaver') throw new Error('English brand title is not translated')
 await languageControl.click()
+await page.getByRole('menuitemradio', { name: '繁體中文' }).click()
+if ((await page.locator('.brand-title').getAttribute('aria-label')) !== '檔案壓縮大救星') throw new Error('Traditional Chinese brand title is not translated')
+await languageControl.click()
+await page.getByRole('menuitemradio', { name: '日本語' }).click()
+if ((await page.locator('.brand-title').getAttribute('aria-label')) !== 'ファイル圧縮の救世主') throw new Error('Japanese brand title is not translated')
+await languageControl.click()
+await page.getByRole('menuitemradio', { name: '简体中文' }).click()
+if ((await page.locator('.brand-title').getAttribute('aria-label')) !== '文件压缩大救星') throw new Error('Simplified Chinese brand title is not translated')
 const themeControl = page.locator('.topbar-actions > .icon-button')
 await themeControl.hover()
 await page.waitForTimeout(220)

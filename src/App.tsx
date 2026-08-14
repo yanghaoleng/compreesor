@@ -733,10 +733,10 @@ function App() {
     }
   }, [messages.commandCopied, messages.copyFailed, showToast])
 
-  const replayBrandBounce = useCallback(() => {
+  const replayBrandEntrance = useCallback(() => {
     const mark = brandMarkRef.current
     if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    mark.classList.remove('brand-mark-replay')
+    mark.classList.remove('brand-mark-in', 'brand-mark-replay')
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => mark.classList.add('brand-mark-replay'))
     })
@@ -1503,12 +1503,12 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label={messages.homeLabel} onClick={replayBrandBounce}>
+        <a className="brand" href="#top" aria-label={messages.homeLabel} onClick={replayBrandEntrance}>
           <span className="brand-mark brand-mark-in" ref={brandMarkRef}>
             <img src={theme === 'dark' ? '/brand/robot-paper-dark.png' : '/brand/robot-paper-light.png'} alt="" />
           </span>
           <span>
-            <strong><SoftBlurTitle text="文件压缩大救星" /></strong>
+            <strong><SoftBlurTitle text={messages.brandSubtitle} /></strong>
             <small>Compressor Studio</small>
           </span>
         </a>

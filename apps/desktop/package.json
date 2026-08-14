@@ -1,6 +1,6 @@
 {
   "name": "compreesor-desktop",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Compreesor desktop app for drag-and-drop image compression and conversion.",
   "type": "module",
   "main": "main.js",
