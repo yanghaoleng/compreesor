@@ -128,6 +128,7 @@ if (single.suggestedFilename() !== 'compreesor-fixture-压缩.png') {
 await page.evaluate(() => {
   const panel = document.querySelector('.tool-panel')
   if (panel instanceof HTMLElement) panel.style.minHeight = '1500px'
+  Math.random = () => 0
   window.scrollTo(0, 0)
 })
 
@@ -136,7 +137,25 @@ await page.getByRole('button', { name: '打包下载' }).click()
 const archive = await zipDownload
 await page.locator('.donate-popover').waitFor()
 await page.locator('.donate-popover.is-viewport-pinned').waitFor()
-await page.waitForTimeout(350)
+await page.waitForFunction(() => document.querySelector('.spring-scale-word')?.getAnimations().length)
+const firstDonatePraise = (await page.locator('.donate-praise-line').innerText()).trim()
+if (firstDonatePraise !== '你很会给生活做减法，愿省下的空间都留给喜欢的事。') {
+  throw new Error(`Unexpected first donation praise: ${firstDonatePraise}`)
+}
+const springScaleTiming = await page.locator('.spring-scale-word').evaluateAll((units) => units.slice(0, 2).map((unit) => {
+  const timing = unit.getAnimations()[0]?.effect?.getTiming()
+  return timing ? { delay: timing.delay, duration: timing.duration, easing: timing.easing } : null
+}))
+if (
+  springScaleTiming.length < 2
+  || springScaleTiming.some((timing) => !timing || timing.duration !== 259 || timing.easing !== 'cubic-bezier(0.34, 1.56, 0.64, 1)')
+  || springScaleTiming[1].delay - springScaleTiming[0].delay !== 68
+) {
+  throw new Error(`spring-scale-in timing does not match the NCM effect: ${JSON.stringify(springScaleTiming)}`)
+}
+await page.waitForFunction(() => Array.from(document.querySelectorAll('.spring-scale-word')).every(
+  (unit) => unit.getAnimations().every((animation) => animation.playState === 'finished'),
+))
 const pinnedPopoverBox = await page.locator('.donate-popover').boundingBox()
 const pinnedPosition = await page.locator('.donate-popover').evaluate((element) => getComputedStyle(element).position)
 if (!pinnedPopoverBox || pinnedPosition !== 'fixed' || Math.abs(1440 - (pinnedPopoverBox.x + pinnedPopoverBox.width) - 16) > 3) {
@@ -160,6 +179,9 @@ const openAnimation = await page.locator('.donate-popover').evaluate((element) =
 if (!openAnimation.includes('donate-pop-in')) throw new Error('Donation popover entrance animation is missing')
 if ((await page.locator('.donate-qr-frame img').count()) !== 1) throw new Error('Donation QR code is missing')
 await page.getByRole('tab', { name: '支付宝' }).click()
+if ((await page.locator('.donate-praise-line').innerText()).trim() !== firstDonatePraise) {
+  throw new Error('Switching donation methods should not replace the praise')
+}
 if (!(await page.locator('.donate-qr-frame img').getAttribute('src')).includes('alipay-qr.webp')) {
   throw new Error('Alipay QR code did not activate')
 }
@@ -176,7 +198,14 @@ await page.evaluate(() => {
 })
 await donateTrigger.click()
 await page.locator('.donate-popover').waitFor()
-await page.waitForTimeout(350)
+await page.waitForFunction(() => document.querySelector('.spring-scale-word')?.getAnimations().length)
+const secondDonatePraise = (await page.locator('.donate-praise-line').innerText()).trim()
+if (secondDonatePraise !== '认真整理文件的人，做事通常也很靠谱。愿你今天一路顺手。' || secondDonatePraise === firstDonatePraise) {
+  throw new Error(`Donation praise should change without repeating when reopened: ${secondDonatePraise}`)
+}
+await page.waitForFunction(() => Array.from(document.querySelectorAll('.spring-scale-word')).every(
+  (unit) => unit.getAnimations().every((animation) => animation.playState === 'finished'),
+))
 
 await page.screenshot({ path: '/tmp/compreesor-desktop.png', fullPage: true })
 
@@ -197,7 +226,9 @@ if (await mobile.locator('.job-progress').first().evaluate((element) => getCompu
 const mobileDonateTrigger = mobile.getByRole('button', { name: '打赏作者' })
 await mobileDonateTrigger.click()
 await mobile.locator('.donate-popover').waitFor()
-await mobile.waitForTimeout(350)
+await mobile.waitForFunction(() => Array.from(document.querySelectorAll('.spring-scale-word')).every(
+  (unit) => unit.getAnimations().every((animation) => animation.playState === 'finished'),
+))
 const mobilePopoverBox = await mobile.locator('.donate-popover').boundingBox()
 const mobileTriggerBox = await mobileDonateTrigger.boundingBox()
 if (!mobilePopoverBox || !mobileTriggerBox || mobilePopoverBox.x < 0 || mobilePopoverBox.x + mobilePopoverBox.width > 390) {
@@ -372,6 +403,19 @@ const svgPngDownload = svgPngPage.waitForEvent('download')
 await svgPngPage.locator('.job-action button').nth(1).click()
 const svgPng = await svgPngDownload
 if (svgPng.suggestedFilename() !== 'fixture-压缩.png') throw new Error('SVG to PNG did not use its Chinese suffix')
+
+const reducedMotionPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
+await reducedMotionPage.emulateMedia({ reducedMotion: 'reduce' })
+await reducedMotionPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await reducedMotionPage.getByRole('button', { name: '打赏作者' }).click()
+await reducedMotionPage.locator('.donate-praise-line').waitFor()
+const reducedMotionWords = await reducedMotionPage.locator('.spring-scale-word').evaluateAll((units) => units.map((unit) => ({
+  animationCount: unit.getAnimations().length,
+  opacity: getComputedStyle(unit).opacity,
+})))
+if (reducedMotionWords.length === 0 || reducedMotionWords.some((word) => word.animationCount !== 0 || word.opacity !== '1')) {
+  throw new Error(`Reduced-motion donation copy should stay visible without WAAPI: ${JSON.stringify(reducedMotionWords)}`)
+}
 
 await browser.close()
 if (errors.length > 0) throw new Error(errors.join('\n'))

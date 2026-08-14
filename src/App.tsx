@@ -111,6 +111,12 @@ const FORMAT_LABELS = {
 } as const
 const AUTHOR_HOME_URL = 'https://mikeywa.icu/'
 const CLI_INSTALL_COMMAND = 'npm install -g compreesor-cli'
+const SPRING_SCALE_IN = {
+  duration: 259,
+  stagger: 68,
+  easing: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+  initialDelayMax: 400,
+} as const
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`
@@ -429,6 +435,86 @@ async function copyText(value: string) {
   if (!copied) throw new Error('Copy command failed')
 }
 
+function splitAnimatedWords(text: string, locale: string) {
+  if (typeof Intl.Segmenter === 'function') {
+    const segments = Array.from(
+      new Intl.Segmenter(locale, { granularity: 'word' }).segment(text),
+      ({ segment, isWordLike }) => ({ text: segment, animate: Boolean(isWordLike) }),
+    )
+
+    return segments.reduce<Array<{ text: string; animate: boolean }>>((parts, part) => {
+      if (part.animate || /^\s+$/u.test(part.text) || parts.length === 0) {
+        parts.push(part)
+      } else {
+        parts[parts.length - 1].text += part.text
+      }
+      return parts
+    }, [])
+  }
+
+  return (text.match(/(\S+|\s+)/g) ?? [text]).map((part) => ({
+    text: part,
+    animate: !/^\s+$/u.test(part),
+  }))
+}
+
+function SpringScaleText({ text, locale }: { text: string; locale: string }) {
+  const hostRef = useRef<HTMLSpanElement>(null)
+  const parts = useMemo(() => splitAnimatedWords(text, locale), [locale, text])
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return undefined
+
+    const units = Array.from(host.querySelectorAll<HTMLElement>('.spring-scale-word'))
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      units.forEach((unit) => {
+        unit.style.opacity = '1'
+        unit.style.transform = 'translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg) rotate(0deg) scale(1)'
+      })
+      return undefined
+    }
+
+    const initialDelay = Math.round(Math.random() * SPRING_SCALE_IN.initialDelayMax)
+    const animations = units.map((unit, index) => unit.animate(
+      [
+        {
+          opacity: 0,
+          transform: 'translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg) rotate(0deg) scale(0.7)',
+        },
+        {
+          opacity: 1,
+          transform: 'translate3d(0, 0, 0) rotateX(0deg) rotateY(0deg) rotate(0deg) scale(1)',
+        },
+      ],
+      {
+        delay: initialDelay + index * SPRING_SCALE_IN.stagger,
+        duration: SPRING_SCALE_IN.duration,
+        easing: SPRING_SCALE_IN.easing,
+        fill: 'forwards',
+      },
+    ))
+
+    return () => animations.forEach((animation) => animation.cancel())
+  }, [parts])
+
+  return (
+    <span className="spring-scale-text" ref={hostRef}>
+      {parts.map((part, index) => part.animate ? (
+        <span className="spring-scale-word" key={`${part.text}-${index}`}>{part.text}</span>
+      ) : (
+        <span key={`${part.text}-${index}`}>{part.text}</span>
+      ))}
+    </span>
+  )
+}
+
+function nextRandomIndex(length: number, currentIndex: number) {
+  if (length <= 1) return 0
+  if (currentIndex < 0) return Math.floor(Math.random() * length)
+  return (currentIndex + 1 + Math.floor(Math.random() * (length - 1))) % length
+}
+
 type PreferencesProps = {
   messages: Messages
   compressionPreset: CompressionPreset
@@ -495,6 +581,7 @@ function App() {
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [previewJobId, setPreviewJobId] = useState<string | null>(null)
   const [donateMethod, setDonateMethod] = useState<'wechat' | 'alipay'>('wechat')
+  const [donatePraiseIndex, setDonatePraiseIndex] = useState(-1)
   const [donatePanelState, setDonatePanelState] = useState<'closed' | 'open' | 'closing'>('closed')
   const [donatePanelPinned, setDonatePanelPinned] = useState(false)
   const [compressionPreset, setCompressionPreset] = useState<CompressionPreset>(DEFAULT_COMPRESSION_PRESET)
@@ -515,6 +602,17 @@ function App() {
   const toastTimerRef = useRef<number | null>(null)
   const messages = I18N[locale]
   const currentLanguage = LANGUAGE_OPTIONS.find((option) => option.id === locale) ?? LANGUAGE_OPTIONS[0]
+  const donatePraise = messages.donatePraises[Math.max(0, donatePraiseIndex) % messages.donatePraises.length]
+
+  const chooseNextDonatePraise = useCallback(() => {
+    setDonatePraiseIndex((current) => nextRandomIndex(messages.donatePraises.length, current))
+  }, [messages.donatePraises.length])
+
+  const openDonatePanel = useCallback((pinned: boolean) => {
+    chooseNextDonatePraise()
+    setDonatePanelPinned(pinned)
+    setDonatePanelState('open')
+  }, [chooseNextDonatePraise])
 
   const showToast = useCallback((message: string, tone: 'success' | 'error') => {
     if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
@@ -1073,14 +1171,13 @@ function App() {
           resolve()
         })
       })
-      setDonatePanelPinned(!isElementInViewport(donateTriggerRef.current))
-      setDonatePanelState('open')
+      openDonatePanel(!isElementInViewport(donateTriggerRef.current))
     } catch {
       setNotice(messages.packageFailed)
     } finally {
       setIsZipping(false)
     }
-  }, [completedJobs, isProcessing, isZipping, messages.packageFailed])
+  }, [completedJobs, isProcessing, isZipping, messages.packageFailed, openDonatePanel])
 
   return (
     <div className="app-shell">
@@ -1359,7 +1456,13 @@ function App() {
             >
               <section className="donate-section">
                 <strong className="donate-popover-title">{messages.donateTitle}</strong>
-                <p>{messages.donateDescription}</p>
+                <p className="donate-copy">
+                  <span className="donate-copy-line">{messages.donateIntro}</span>
+                  <span className="donate-copy-line donate-praise-line">
+                    <SpringScaleText text={donatePraise} locale={currentLanguage.htmlLang} />
+                  </span>
+                  <span className="donate-copy-line">{messages.donateRequest}</span>
+                </p>
                 <div className="donate-tabs" role="tablist" aria-label={messages.donateTitle}>
                   <button
                     className={donateMethod === 'wechat' ? 'active wechat' : 'wechat'}
@@ -1396,8 +1499,11 @@ function App() {
             aria-controls="donate-panel"
             aria-expanded={donatePanelState === 'open'}
             onClick={() => {
-              setDonatePanelPinned(false)
-              setDonatePanelState((current) => current === 'open' ? 'closing' : 'open')
+              if (donatePanelState === 'open') {
+                setDonatePanelState('closing')
+                return
+              }
+              openDonatePanel(false)
             }}
           >
             <ThumbsUp size={14} weight="bold" />{messages.donateTitle}

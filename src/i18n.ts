@@ -50,7 +50,9 @@ export type Messages = {
   packageFailed: string
   dragMore: string
   donateTitle: string
-  donateDescription: string
+  donateIntro: string
+  donatePraises: string[]
+  donateRequest: string
   alipay: string
   wechat: string
   qrAlt: (method: string) => string
@@ -111,7 +113,19 @@ export const I18N: Record<Locale, Messages> = {
     tooLarge: '图片需小于 100 MB，GIF 或视频需小于 500 MB', ignored: '已忽略不支持的文件',
     maxFiles: '一次最多处理 30 个文件', packageFailed: '打包失败，请先单个下载完成的文件',
     dragMore: '松开即可继续添加文件', donateTitle: '打赏作者',
-    donateDescription: '如果这个工具帮到了你，可以随意打赏，支持后续维护。',
+    donateIntro: '这个工具会一直免费，如果它帮你省了空间和时间，可以随意打赏。',
+    donatePraises: [
+      '你很会给生活做减法，愿省下的空间都留给喜欢的事。',
+      '认真整理文件的人，做事通常也很靠谱。愿你今天一路顺手。',
+      '你对细节的在意很有分量，愿所有繁琐都被轻轻压缩。',
+      '能把工具用得恰到好处，是一种聪明。愿你的时间都花在值得的地方。',
+      '你正在让事情变得更轻巧，愿接下来的每一步也都轻松。',
+      '你的效率感很漂亮，愿任务越变越小，成就感越攒越大。',
+      '你把空间整理得很好，也别忘了照顾自己。愿你忙而不乱，付出都有回响。',
+      '你做事有章法，连文件都跟着变利落。愿好结果来得比进度条更快。',
+      '今天的你又省下了一点空间，愿生活也常为你留有余地。',
+    ],
+    donateRequest: '你也可以给我提要求，我会努力实现！',
     alipay: '支付宝', wechat: '微信', qrAlt: (method) => `${method}收款二维码`,
     usageGuide: '使用说明', authorHomepage: '作者主页', closeUsage: '关闭使用说明', cliGuide: 'CLI 命令行',
     cliTitle: '安装 CLI 批量压缩', cliIntro: '在终端、自动化脚本或能访问本地文件的 AI 助手中批量处理图片、SVG、GIF 和视频。',
@@ -144,7 +158,19 @@ export const I18N: Record<Locale, Messages> = {
     tooLarge: '圖片需小於 100 MB，GIF 或影片需小於 500 MB', ignored: '已略過不支援的檔案',
     maxFiles: '一次最多處理 30 個檔案', packageFailed: '打包失敗，請先單獨下載完成的檔案',
     dragMore: '放開即可繼續新增檔案', donateTitle: '打賞作者',
-    donateDescription: '如果這個工具幫到你，可以隨意打賞，支持後續維護。',
+    donateIntro: '這個工具會一直免費，如果它幫你省下空間和時間，可以隨意打賞。',
+    donatePraises: [
+      '你很懂得替生活做減法，願省下的空間都留給喜歡的事。',
+      '認真整理檔案的人，做事通常也很可靠。願你今天一路順手。',
+      '你對細節的在意很有分量，願所有繁瑣都被輕輕壓縮。',
+      '能把工具用得恰到好處，是一種聰明。願你的時間都花在值得的地方。',
+      '你正在讓事情變得更輕巧，願接下來的每一步也都輕鬆。',
+      '你的效率感很漂亮，願任務越變越小，成就感越積越大。',
+      '你把空間整理得很好，也別忘了照顧自己。願你忙而不亂，付出都有回響。',
+      '你做事有章法，連檔案都跟著變俐落。願好結果來得比進度條更快。',
+      '今天的你又省下了一點空間，願生活也常為你留有餘地。',
+    ],
+    donateRequest: '你也可以向我提出要求，我會努力實現！',
     alipay: '支付寶', wechat: '微信', qrAlt: (method) => `${method}收款 QR Code`,
     usageGuide: '使用說明', authorHomepage: '作者首頁', closeUsage: '關閉使用說明', cliGuide: 'CLI 命令列',
     cliTitle: '安裝 CLI 批次壓縮', cliIntro: '在終端、腳本或可存取本機檔案的 AI 助手中批次處理圖片、SVG、GIF 與影片。',
@@ -177,7 +203,19 @@ export const I18N: Record<Locale, Messages> = {
     tooLarge: 'Images must be under 100 MB; GIF and video must be under 500 MB', ignored: 'Unsupported files were skipped',
     maxFiles: 'Up to 30 files can be processed at once', packageFailed: 'ZIP creation failed. Download completed files individually.',
     dragMore: 'Release to add more files', donateTitle: 'Support the author',
-    donateDescription: 'If this tool helped, you can leave an optional tip to support future maintenance.',
+    donateIntro: 'This tool will always be free. If it saves you space and time, you’re welcome to leave any amount as a tip.',
+    donatePraises: [
+      'You know how to make room for what matters. May the space you save go to the things you love.',
+      'Anyone this thoughtful with files probably has a great handle on things. Hope everything goes smoothly today.',
+      'Your eye for detail carries weight. May every bit of hassle shrink away.',
+      'Knowing just the right tool is its own kind of clever. May your time go to what truly matters.',
+      'You have a knack for making things lighter. May every next step feel just as easy.',
+      'Efficiency looks good on you. May the tasks get smaller and the wins keep adding up.',
+      'You have made your space beautifully tidy—remember to take care of yourself, too. May your effort always be worthwhile.',
+      'You have a wonderfully tidy way of getting things done—even your files agree. May good news arrive faster than the progress bar.',
+      'You made a little more space today. May life always leave a little room for you, too.',
+    ],
+    donateRequest: 'You can also send me requests, and I’ll do my best to make them happen!',
     alipay: 'Alipay', wechat: 'WeChat Pay', qrAlt: (method) => `${method} payment QR code`,
     usageGuide: 'How to use', authorHomepage: 'Author', closeUsage: 'Close usage guide', cliGuide: 'CLI',
     cliTitle: 'Install the batch CLI', cliIntro: 'Batch-process images, SVG, GIF and video from a terminal, automation, or a local AI assistant with file access.',
@@ -210,7 +248,19 @@ export const I18N: Record<Locale, Messages> = {
     tooLarge: '画像は 100 MB 未満、GIF と動画は 500 MB 未満にしてください', ignored: '未対応のファイルを除外しました',
     maxFiles: '一度に最大 30 ファイルまで処理できます', packageFailed: 'ZIP 作成に失敗しました。完了したファイルを個別に保存してください。',
     dragMore: '離してファイルを追加', donateTitle: '作者を応援',
-    donateDescription: 'このツールが役立ったら、今後のメンテナンスを任意で支援できます。',
+    donateIntro: 'このツールはずっと無料です。容量と時間の節約になったら、お好きな金額で応援していただけます。',
+    donatePraises: [
+      '暮らしを軽くするのが上手ですね。空いた余白が、好きなことで満たされますように。',
+      'ファイルを丁寧に整える人は、きっと物事にも誠実。今日がすいすい進みますように。',
+      '細部まで大切にできるのは、素敵なこと。面倒ごとが、ぎゅっと小さくなりますように。',
+      '道具をちょうどよく使いこなせるのも、立派な賢さ。時間を大切なことに使えますように。',
+      '物事を軽やかにするのが上手ですね。この先の一歩一歩も、すんなり進みますように。',
+      'その手際のよさ、素敵です。タスクは小さく、達成感は大きくなりますように。',
+      '余白をきれいに整えたあなた自身のことも、どうか大切に。頑張りがきちんと報われますように。',
+      '進め方がきれいだから、ファイルまできびきびしています。いい結果が、進捗バーより早く届きますように。',
+      '今日も少し余白をつくれましたね。毎日の中にも、あなたのための余裕がありますように。',
+    ],
+    donateRequest: 'ご要望もぜひ教えてください。できる限り実現します！',
     alipay: 'Alipay', wechat: 'WeChat Pay', qrAlt: (method) => `${method} 支払い QR コード`,
     usageGuide: '使い方', authorHomepage: '作者ページ', closeUsage: '使い方を閉じる', cliGuide: 'CLI',
     cliTitle: 'CLI をインストール', cliIntro: 'ターミナル、スクリプト、またはローカルファイルへアクセスできる AI から画像、SVG、GIF、動画を一括処理できます。',
