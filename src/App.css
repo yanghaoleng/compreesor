@@ -35,6 +35,8 @@
 }
 
 .brand-mark {
+  position: relative;
+  top: -3px;
   width: 48px;
   height: 48px;
   display: grid;
