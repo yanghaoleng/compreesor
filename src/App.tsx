@@ -733,13 +733,16 @@ function App() {
     }
   }, [messages.commandCopied, messages.copyFailed, showToast])
 
-  const replayBrandEntrance = useCallback(() => {
+  const triggerBrandBounce = useCallback(() => {
     const mark = brandMarkRef.current
     if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    mark.classList.remove('brand-mark-in', 'brand-mark-replay')
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => mark.classList.add('brand-mark-replay'))
-    })
+    mark.classList.remove('brand-mark-bounce-trigger')
+    void mark.offsetWidth
+    mark.classList.add('brand-mark-bounce-trigger')
+  }, [])
+
+  const stopBrandBounce = useCallback(() => {
+    brandMarkRef.current?.classList.remove('brand-mark-bounce-trigger')
   }, [])
 
   useEffect(() => {
@@ -1503,7 +1506,14 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label={messages.homeLabel} onClick={replayBrandEntrance}>
+        <a
+          className="brand"
+          href="#top"
+          aria-label={messages.homeLabel}
+          onClick={triggerBrandBounce}
+          onMouseEnter={triggerBrandBounce}
+          onMouseLeave={stopBrandBounce}
+        >
           <span className="brand-mark brand-mark-in" ref={brandMarkRef}>
             <img src={theme === 'dark' ? '/brand/robot-paper-dark.png' : '/brand/robot-paper-light.png'} alt="" />
           </span>

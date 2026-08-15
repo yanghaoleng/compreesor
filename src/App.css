@@ -51,22 +51,18 @@
   filter: drop-shadow(0 5px 8px rgba(19, 37, 70, 0.16));
 }
 
-.brand-mark-in,
-.brand-mark-replay {
+.brand-mark-in {
   animation:
     brand-mark-drop-in 720ms cubic-bezier(0.22, 0.85, 0.25, 1) both,
     brand-mark-bounce 540ms 720ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.brand-mark-replay {
-  --brand-mark-start-opacity: 1;
+.brand-mark-bounce-trigger {
+  animation: brand-mark-bounce 540ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes brand-mark-drop-in {
-  from {
-    opacity: var(--brand-mark-start-opacity, 0);
-    transform: translateY(calc(-100vh - 72px)) rotate(-7deg);
-  }
+  from { opacity: 0; transform: translateY(calc(-100vh - 72px)) rotate(-7deg); }
   72% { opacity: 1; transform: translateY(6px) rotate(1.2deg); }
   to { opacity: 1; transform: translateY(0) rotate(0); }
 }
@@ -1896,7 +1892,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .brand-mark-in,
-  .brand-mark-replay {
+  .brand-mark-bounce-trigger {
     opacity: 1;
     animation: none;
     transform: none;

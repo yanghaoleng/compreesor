@@ -29,17 +29,16 @@ if (!initialBrandAnimations.includes('brand-mark-drop-in') || !initialBrandAnima
 }
 await page.locator('.brand-mark img').evaluate((image) => { image.dataset.stableNode = 'true' })
 await page.locator('.brand').click()
-await page.waitForFunction(() => document.querySelector('.brand-mark')?.classList.contains('brand-mark-replay'))
+await page.waitForFunction(() => document.querySelector('.brand-mark')?.classList.contains('brand-mark-bounce-trigger'))
 const replayBrand = await page.locator('.brand-mark').evaluate((element) => ({
   animations: element.getAnimations().map((animation) => animation.animationName),
   stableNode: element.querySelector('img')?.dataset.stableNode,
 }))
 if (
   replayBrand.stableNode !== 'true'
-  || !replayBrand.animations.includes('brand-mark-drop-in')
-  || !replayBrand.animations.includes('brand-mark-bounce')
+  || replayBrand.animations.some((animation) => animation !== 'brand-mark-bounce')
 ) {
-  throw new Error(`Brand click should replay drop-in and bounce on the same image node: ${JSON.stringify(replayBrand)}`)
+  throw new Error(`Brand click should replay bounce only on the same image node: ${JSON.stringify(replayBrand)}`)
 }
 await page.locator('.brand-mark').evaluate(async (element) => {
   await Promise.all(element.getAnimations().map((animation) => animation.finished.catch(() => undefined)))
@@ -50,6 +49,12 @@ const settledBrand = await page.locator('.brand-mark').evaluate((element) => ({
 }))
 if (settledBrand.opacity !== '1' || (settledBrand.transform !== 'none' && settledBrand.transform !== 'matrix(1, 0, 0, 1, 0, 0)')) {
   throw new Error(`Brand should settle after the replayed entrance: ${JSON.stringify(settledBrand)}`)
+}
+await page.locator('.brand').hover()
+await page.waitForFunction(() => document.querySelector('.brand-mark')?.classList.contains('brand-mark-bounce-trigger'))
+const hoverBrandAnimations = await page.locator('.brand-mark').evaluate((element) => element.getAnimations().map((animation) => animation.animationName))
+if (hoverBrandAnimations.some((animation) => animation !== 'brand-mark-bounce')) {
+  throw new Error(`Brand hover should trigger bounce only: ${JSON.stringify(hoverBrandAnimations)}`)
 }
 await page.locator('.preferences select').nth(0).selectOption('balanced')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
