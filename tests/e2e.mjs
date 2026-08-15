@@ -184,11 +184,30 @@ if (singleDownloadBackground !== 'rgba(0, 0, 0, 0)') {
 
 await singlePreviewButton.click()
 await page.locator('.result-preview .image-preview-stage img').waitFor()
+await page.waitForTimeout(260)
 const previewBox = await page.locator('.result-preview').boundingBox()
-if (!previewBox || previewBox.x < 16 || previewBox.x > 26 || 1050 - (previewBox.y + previewBox.height) < 8 || 1050 - (previewBox.y + previewBox.height) > 26) {
-  throw new Error(`Preview should float near the bottom-left: ${JSON.stringify(previewBox)}`)
+if (!previewBox || Math.abs(previewBox.x) > 2 || Math.abs(previewBox.width - 1440) > 2 || Math.abs(1050 - (previewBox.y + previewBox.height)) > 2) {
+  throw new Error(`Preview should span the viewport width at the bottom: ${JSON.stringify(previewBox)}`)
 }
 if ((await page.locator('.result-preview .preview-page').count()) !== 2) throw new Error('Image preview paging controls are missing')
+await page.locator('.result-preview > header button').click()
+
+await page.locator('.job-action button').first().click()
+await page.locator('.result-preview .comparison-image-stage').first().waitFor()
+if ((await page.locator('.comparison-card > header button').count()) !== 3) throw new Error('Comparison downloads are missing')
+const comparisonButtons = await page.locator('.comparison-card > header button').evaluateAll((buttons) => buttons.map((button) => {
+  const box = button.getBoundingClientRect()
+  const preview = document.querySelector('.result-preview')?.getBoundingClientRect()
+  return preview ? { width: box.width, height: box.height, outside: box.bottom <= preview.top } : null
+}))
+if (comparisonButtons.some((button) => !button || button.width > 25 || button.height > 25 || !button.outside)) {
+  throw new Error(`Comparison controls should be small and outside the preview: ${JSON.stringify(comparisonButtons)}`)
+}
+await page.locator('.comparison-toolbar button').last().click()
+const comparisonTransforms = await page.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
+if (comparisonTransforms.length !== 3 || comparisonTransforms.some((transform) => !transform?.includes('scale(1.25)'))) {
+  throw new Error(`Comparison zoom should apply to all quality previews: ${JSON.stringify(comparisonTransforms)}`)
+}
 await page.locator('.result-preview > header button').click()
 
 const singleDownload = page.waitForEvent('download')
