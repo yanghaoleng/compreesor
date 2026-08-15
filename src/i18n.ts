@@ -52,6 +52,7 @@ export type Messages = {
   reveal: string
   preview: string
   closePreview: string
+  resizePreview: string
   previousPreview: string
   nextPreview: string
   zoomOut: string
@@ -125,7 +126,7 @@ export const I18N: Record<Locale, Messages> = {
     zipping: '正在打包', files: (count) => `${count} 个文件`, processingCount: (count) => `正在处理 ${count} 个`,
     completedSummary: (count, saved) => `${count} 个已完成${saved > 0 ? ` · 节省 ${saved}%` : ''}`,
     imageKind: '图片', videoKind: '视频', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 份', waiting: '等待处理', processing: '正在处理',
-    failed: '处理失败', retry: '重试', download: '下载', reveal: '在文件夹中显示', preview: '预览', closePreview: '关闭预览', previousPreview: '上一个', nextPreview: '下一个', zoomOut: '缩小', zoomReset: '恢复 1:1', zoomIn: '放大', dragZoomHint: '拖动或滚轮缩放，三个结果同步',
+    failed: '处理失败', retry: '重试', download: '下载', reveal: '在文件夹中显示', preview: '预览', closePreview: '关闭预览', resizePreview: '拖动调整预览高度', previousPreview: '上一个', nextPreview: '下一个', zoomOut: '缩小', zoomReset: '恢复 1:1', zoomIn: '放大', dragZoomHint: '拖动或滚轮缩放，三个结果同步',
     unsupported: '请选择 JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 或视频文件',
     tooLarge: '图片和 PDF 需小于 100 MB，GIF 或视频需小于 500 MB', ignored: '已忽略不支持的文件',
     maxFiles: '一次最多处理 30 个文件', packageFailed: '打包失败，请先单个下载完成的文件',
@@ -166,7 +167,7 @@ export const I18N: Record<Locale, Messages> = {
     zipping: '正在打包', files: (count) => `${count} 個檔案`, processingCount: (count) => `正在處理 ${count} 個`,
     completedSummary: (count, saved) => `${count} 個已完成${saved > 0 ? ` · 節省 ${saved}%` : ''}`,
     imageKind: '圖片', videoKind: '影片', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 份', waiting: '等待處理', processing: '正在處理',
-    failed: '處理失敗', retry: '重試', download: '下載', reveal: '在資料夾中顯示', preview: '預覽', closePreview: '關閉預覽', previousPreview: '上一個', nextPreview: '下一個', zoomOut: '縮小', zoomReset: '恢復 1:1', zoomIn: '放大', dragZoomHint: '拖曳或滾輪縮放，三個結果同步',
+    failed: '處理失敗', retry: '重試', download: '下載', reveal: '在資料夾中顯示', preview: '預覽', closePreview: '關閉預覽', resizePreview: '拖曳調整預覽高度', previousPreview: '上一個', nextPreview: '下一個', zoomOut: '縮小', zoomReset: '恢復 1:1', zoomIn: '放大', dragZoomHint: '拖曳或滾輪縮放，三個結果同步',
     unsupported: '請選擇 JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 或影片檔案',
     tooLarge: '圖片與 PDF 需小於 100 MB，GIF 或影片需小於 500 MB', ignored: '已略過不支援的檔案',
     maxFiles: '一次最多處理 30 個檔案', packageFailed: '打包失敗，請先單獨下載完成的檔案',
@@ -207,7 +208,7 @@ export const I18N: Record<Locale, Messages> = {
     zipping: 'Creating ZIP', files: (count) => `${count} file${count === 1 ? '' : 's'}`,
     processingCount: (count) => `Processing ${count}`, completedSummary: (count, saved) => `${count} completed${saved > 0 ? ` · ${saved}% smaller` : ''}`,
     imageKind: 'Image', videoKind: 'Video', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 results', waiting: 'Waiting', processing: 'Processing',
-    failed: 'Failed', retry: 'Retry', download: 'Download', reveal: 'Show in folder', preview: 'Preview', closePreview: 'Close preview', previousPreview: 'Previous', nextPreview: 'Next', zoomOut: 'Zoom out', zoomReset: 'Reset to 1:1', zoomIn: 'Zoom in', dragZoomHint: 'Drag or scroll to inspect all three in sync',
+    failed: 'Failed', retry: 'Retry', download: 'Download', reveal: 'Show in folder', preview: 'Preview', closePreview: 'Close preview', resizePreview: 'Drag to resize preview height', previousPreview: 'Previous', nextPreview: 'Next', zoomOut: 'Zoom out', zoomReset: 'Reset to 1:1', zoomIn: 'Zoom in', dragZoomHint: 'Drag or scroll to inspect all three in sync',
     unsupported: 'Choose JPG, PNG, WebP, AVIF, JXL, SVG, GIF, PDF or video files',
     tooLarge: 'Images and PDFs must be under 100 MB; GIF and video must be under 500 MB', ignored: 'Unsupported files were skipped',
     maxFiles: 'Up to 30 files can be processed at once', packageFailed: 'ZIP creation failed. Download completed files individually.',
@@ -248,7 +249,7 @@ export const I18N: Record<Locale, Messages> = {
     zipping: 'ZIP 作成中', files: (count) => `${count} ファイル`, processingCount: (count) => `${count} 件を処理中`,
     completedSummary: (count, saved) => `${count} 件完了${saved > 0 ? ` · ${saved}% 削減` : ''}`,
     imageKind: '画像', videoKind: '動画', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 種類', waiting: '待機中', processing: '処理中',
-    failed: '処理失敗', retry: '再試行', download: 'ダウンロード', reveal: 'フォルダーに表示', preview: 'プレビュー', closePreview: '閉じる', previousPreview: '前へ', nextPreview: '次へ', zoomOut: '縮小', zoomReset: '1:1 に戻す', zoomIn: '拡大', dragZoomHint: 'ドラッグまたはホイールで3種類を同期操作',
+    failed: '処理失敗', retry: '再試行', download: 'ダウンロード', reveal: 'フォルダーに表示', preview: 'プレビュー', closePreview: '閉じる', resizePreview: 'ドラッグしてプレビューの高さを調整', previousPreview: '前へ', nextPreview: '次へ', zoomOut: '縮小', zoomReset: '1:1 に戻す', zoomIn: '拡大', dragZoomHint: 'ドラッグまたはホイールで3種類を同期操作',
     unsupported: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF または動画を選択してください',
     tooLarge: '画像と PDF は 100 MB 未満、GIF と動画は 500 MB 未満にしてください', ignored: '未対応のファイルを除外しました',
     maxFiles: '一度に最大 30 ファイルまで処理できます', packageFailed: 'ZIP 作成に失敗しました。完了したファイルを個別に保存してください。',

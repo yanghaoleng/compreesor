@@ -676,6 +676,7 @@ function App() {
   const [cliGuideOpen, setCliGuideOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [previewJobId, setPreviewJobId] = useState<string | null>(null)
+  const [previewHeight, setPreviewHeight] = useState<number | null>(null)
   const [comparisonView, setComparisonView] = useState({ scale: 1, x: 0, y: 0 })
   const [reprocessVisible, setReprocessVisible] = useState(false)
   const [reprocessReady, setReprocessReady] = useState(false)
@@ -693,6 +694,8 @@ function App() {
   const urlsRef = useRef(new Set<string>())
   const inputRef = useRef<HTMLInputElement>(null)
   const brandMarkRef = useRef<HTMLSpanElement>(null)
+  const previewPanelRef = useRef<HTMLElement>(null)
+  const previewResizeRef = useRef<{ pointerId: number; clientY: number; height: number } | null>(null)
   const comparisonDragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null)
   const dragDepthRef = useRef(0)
   const languageMenuRef = useRef<HTMLDivElement>(null)
@@ -736,13 +739,13 @@ function App() {
   const triggerBrandBounce = useCallback(() => {
     const mark = brandMarkRef.current
     if (!mark || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    mark.classList.remove('brand-mark-bounce-trigger')
+    mark.classList.remove('brand-mark-in', 'brand-mark-bounce-trigger')
     void mark.offsetWidth
     mark.classList.add('brand-mark-bounce-trigger')
   }, [])
 
   const stopBrandBounce = useCallback(() => {
-    brandMarkRef.current?.classList.remove('brand-mark-bounce-trigger')
+    brandMarkRef.current?.classList.remove('brand-mark-in', 'brand-mark-bounce-trigger')
   }, [])
 
   useEffect(() => {
@@ -1335,6 +1338,16 @@ function App() {
   useEffect(() => {
     setComparisonView({ scale: 1, x: 0, y: 0 })
     comparisonDragRef.current = null
+    previewResizeRef.current = null
+  }, [previewJobId])
+
+  useEffect(() => {
+    if (!previewJobId) return undefined
+    const closePreviewOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPreviewJobId(null)
+    }
+    window.addEventListener('keydown', closePreviewOnEscape)
+    return () => window.removeEventListener('keydown', closePreviewOnEscape)
   }, [previewJobId])
   const isProcessing = jobs.some((job) => job.status === 'queued' || job.status === 'processing')
   const originalTotal = completedJobs.reduce((sum, job) => sum + job.file.size, 0)
@@ -1465,6 +1478,30 @@ function App() {
 
   const zoomComparison = useCallback((nextScale: number) => {
     setComparisonView((current) => ({ ...current, scale: Math.max(1, Math.min(5, nextScale)) }))
+  }, [])
+
+  const beginPreviewResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !previewPanelRef.current) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    previewResizeRef.current = {
+      pointerId: event.pointerId,
+      clientY: event.clientY,
+      height: previewPanelRef.current.getBoundingClientRect().height,
+    }
+  }, [])
+
+  const movePreviewResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const resize = previewResizeRef.current
+    if (!resize || resize.pointerId !== event.pointerId) return
+    const maxHeight = Math.max(220, window.innerHeight - 48)
+    setPreviewHeight(Math.max(220, Math.min(maxHeight, resize.height + resize.clientY - event.clientY)))
+  }, [])
+
+  const endPreviewResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (previewResizeRef.current?.pointerId !== event.pointerId) return
+    previewResizeRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }, [])
 
   const beginComparisonDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -1909,10 +1946,25 @@ function App() {
       )}
 
       {previewJob && previewJob.resultUrl && (
-        <aside className={`result-preview${previewJob.variants.length > 1 ? ' is-comparison' : ''}`} aria-label={`${messages.preview} ${previewJob.file.name}`}>
+        <aside
+          className={`result-preview${previewJob.variants.length > 1 ? ' is-comparison' : ''}${previewHeight !== null ? ' is-resized' : ''}`}
+          ref={previewPanelRef}
+          style={previewHeight !== null ? { height: `${previewHeight}px` } : undefined}
+          aria-label={`${messages.preview} ${previewJob.file.name}`}
+        >
+          <div
+            className="preview-resize-handle"
+            role="separator"
+            aria-label={messages.resizePreview}
+            title={messages.resizePreview}
+            onPointerDown={beginPreviewResize}
+            onPointerMove={movePreviewResize}
+            onPointerUp={endPreviewResize}
+            onPointerCancel={endPreviewResize}
+          />
           <header>
             <div>
-              <strong title={previewJob.outputName ?? previewJob.file.name}>{previewJob.outputName ?? previewJob.file.name}</strong>
+              <strong title={previewJob.file.name}>{previewJob.file.name}</strong>
               <span>{previewJob.outputLabel}</span>
             </div>
             <button type="button" onClick={() => setPreviewJobId(null)} aria-label={messages.closePreview} title={messages.closePreview}>
@@ -1934,13 +1986,13 @@ function App() {
               {previewJob.variants.map((variant) => (
                 <article className="comparison-card" key={variant.preset}>
                   <header>
+                    <button type="button" onClick={() => downloadJob(previewJob, variant)} aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}>
+                      <DownloadSimple size={13} weight="bold" />
+                    </button>
                     <div>
                       <strong>{qualityLabel(variant.preset as QualityPreset, messages)}</strong>
                       <span>{formatBytes(previewJob.file.size)} → {formatBytes(variant.blob.size)}</span>
                     </div>
-                    <button type="button" onClick={() => downloadJob(previewJob, variant)} aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}>
-                      <DownloadSimple size={15} weight="bold" />
-                    </button>
                   </header>
                   {previewJob.kind === 'video' ? (
                     variant.outputLabel === 'MP3' ? (
@@ -1977,10 +2029,10 @@ function App() {
               <video key={previewJob.resultUrl} src={previewJob.resultUrl} controls autoPlay playsInline />
             )
           ) : previewJob.kind === 'pdf' || previewJob.outputLabel === 'PDF' ? (
-            <iframe className="pdf-preview-frame" src={`${previewJob.resultUrl}#page=1&toolbar=0&navpanes=0`} title={previewJob.outputName ?? previewJob.file.name} />
+            <iframe className="pdf-preview-frame" src={`${previewJob.resultUrl}#page=1&toolbar=0&navpanes=0`} title={previewJob.file.name} />
           ) : (
             <div className="image-preview-stage">
-              <img src={previewJob.resultUrl} alt={previewJob.outputName ?? previewJob.file.name} />
+              <img src={previewJob.resultUrl} alt={previewJob.file.name} />
               {previewableJobs.length > 1 && (
                 <>
                   <button

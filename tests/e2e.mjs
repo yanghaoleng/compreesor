@@ -56,6 +56,15 @@ const hoverBrandAnimations = await page.locator('.brand-mark').evaluate((element
 if (hoverBrandAnimations.some((animation) => animation !== 'brand-mark-bounce')) {
   throw new Error(`Brand hover should trigger bounce only: ${JSON.stringify(hoverBrandAnimations)}`)
 }
+await page.locator('.preferences').hover()
+await page.waitForTimeout(40)
+const brandAfterHover = await page.locator('.brand-mark').evaluate((element) => ({
+  classes: element.className,
+  animations: element.getAnimations().map((animation) => animation.animationName),
+}))
+if (brandAfterHover.classes.includes('brand-mark-in') || brandAfterHover.animations.includes('brand-mark-drop-in')) {
+  throw new Error(`Leaving brand hover must not replay the entrance: ${JSON.stringify(brandAfterHover)}`)
+}
 await page.locator('.preferences select').nth(0).selectOption('balanced')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
   throw new Error('Original image output copy is incorrect')
@@ -197,23 +206,64 @@ if (!previewBox || Math.abs(previewBox.x) > 2 || Math.abs(previewBox.width - 144
 if ((await page.locator('.result-preview .preview-page').count()) !== 2) throw new Error('Image preview paging controls are missing')
 await page.locator('.result-preview > header button').click()
 
-await page.locator('.job-action button').first().click()
-await page.locator('.result-preview .comparison-image-stage').first().waitFor()
-if ((await page.locator('.comparison-card > header button').count()) !== 3) throw new Error('Comparison downloads are missing')
-const comparisonButtons = await page.locator('.comparison-card > header button').evaluateAll((buttons) => buttons.map((button) => {
-  const box = button.getBoundingClientRect()
-  const preview = document.querySelector('.result-preview')?.getBoundingClientRect()
-  return preview ? { width: box.width, height: box.height, outside: box.bottom <= preview.top } : null
-}))
-if (comparisonButtons.some((button) => !button || button.width > 25 || button.height > 25 || !button.outside)) {
-  throw new Error(`Comparison controls should be small and outside the preview: ${JSON.stringify(comparisonButtons)}`)
+const comparisonPage = await browser.newPage({ viewport: { width: 1440, height: 1050 }, deviceScaleFactor: 1 })
+await comparisonPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
+await comparisonPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
+await comparisonPage.waitForFunction(
+  () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
+  undefined,
+  { timeout: 180_000 },
+)
+if (await comparisonPage.locator('.job-row.status-error').count()) {
+  throw new Error(`Comparison fixture failed: ${await comparisonPage.locator('.job-list').innerText()}`)
 }
-await page.locator('.comparison-toolbar button').last().click()
-const comparisonTransforms = await page.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
+await comparisonPage.locator('.variant-result-item').first().hover()
+await comparisonPage.waitForTimeout(200)
+const qualityHoverBox = await comparisonPage.locator('.variant-hover-preview').first().boundingBox()
+if (
+  !qualityHoverBox
+  || qualityHoverBox.width < 680
+  || qualityHoverBox.height < 460
+  || qualityHoverBox.x < 0
+  || qualityHoverBox.y < 0
+  || qualityHoverBox.x + qualityHoverBox.width > 1440
+  || qualityHoverBox.y + qualityHoverBox.height > 1050
+) {
+  throw new Error(`Quality hover preview should be roughly 3x larger: ${JSON.stringify(qualityHoverBox)}`)
+}
+await comparisonPage.locator('.job-action button').first().click()
+await comparisonPage.locator('.result-preview .comparison-image-stage').first().waitFor()
+if ((await comparisonPage.locator('.result-preview > header strong').innerText()).trim() !== 'compreesor-fixture.png') {
+  throw new Error('Preview header should retain the original filename')
+}
+if ((await comparisonPage.locator('.comparison-card > header button').count()) !== 3) throw new Error('Comparison downloads are missing')
+const comparisonButtons = await comparisonPage.locator('.comparison-card > header').evaluateAll((headers) => headers.map((header) => {
+  const button = header.querySelector('button')?.getBoundingClientRect()
+  const title = header.querySelector('strong')?.getBoundingClientRect()
+  return button && title ? { width: button.width, height: button.height, beforeTitle: button.right <= title.left } : null
+}))
+if (comparisonButtons.some((button) => !button || button.width > 25 || button.height > 25 || !button.beforeTitle)) {
+  throw new Error(`Comparison downloads should be small and left of each quality title: ${JSON.stringify(comparisonButtons)}`)
+}
+await comparisonPage.locator('.comparison-toolbar button').last().click()
+const comparisonTransforms = await comparisonPage.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
 if (comparisonTransforms.length !== 3 || comparisonTransforms.some((transform) => !transform?.includes('scale(1.25)'))) {
   throw new Error(`Comparison zoom should apply to all quality previews: ${JSON.stringify(comparisonTransforms)}`)
 }
-await page.locator('.result-preview > header button').click()
+const previewBeforeResize = await comparisonPage.locator('.result-preview').boundingBox()
+const resizeHandle = await comparisonPage.locator('.preview-resize-handle').boundingBox()
+if (!previewBeforeResize || !resizeHandle) throw new Error('Preview resize handle is missing')
+await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y + resizeHandle.height / 2)
+await comparisonPage.mouse.down()
+await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y - 80)
+await comparisonPage.mouse.up()
+const previewAfterResize = await comparisonPage.locator('.result-preview').boundingBox()
+if (!previewAfterResize || previewAfterResize.height < previewBeforeResize.height + 60) {
+  throw new Error(`Dragging the top edge should increase preview height: ${JSON.stringify({ previewBeforeResize, previewAfterResize })}`)
+}
+await comparisonPage.keyboard.press('Escape')
+await comparisonPage.waitForFunction(() => !document.querySelector('.result-preview'))
+await comparisonPage.close()
 
 const singleDownload = page.waitForEvent('download')
 await singleDownloadButton.click()
