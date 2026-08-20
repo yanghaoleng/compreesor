@@ -806,6 +806,12 @@ function App() {
     setPinnedPreviewJobId(null)
   }, [])
 
+  const clearPreviewSelectionFromBlank = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!activePreviewJobId || !(event.target instanceof Element)) return
+    if (event.target.closest('.job-row, .result-preview, button, a, input, select, textarea, label, [role="dialog"], [role="menu"], [role="tab"], [contenteditable="true"]')) return
+    closePreview()
+  }, [activePreviewJobId, closePreview])
+
   useEffect(() => {
     if (hoveredPreviewJobId && !previewableJobs.some((job) => job.id === hoveredPreviewJobId)) {
       setHoveredPreviewJobId(null)
@@ -949,7 +955,10 @@ function App() {
   }, [downloadAll])
 
   return (
-    <div className={`app-shell${jobs.length > 0 ? ' has-jobs' : ''}`}>
+    <div
+      className={`app-shell${jobs.length > 0 ? ' has-jobs' : ''}`}
+      onPointerDown={clearPreviewSelectionFromBlank}
+    >
       <TopBar
         locale={locale}
         messages={messages}

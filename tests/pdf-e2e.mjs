@@ -35,7 +35,7 @@ try {
   await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
   if (!(await page.locator('.queue-section').getAttribute('class'))?.includes('is-spacious')) throw new Error('Small queue should use spacious layout')
   const thumbnail = await page.locator('.thumbnail').boundingBox()
-  if (!thumbnail || thumbnail.width < 70) throw new Error(`Spacious thumbnail is too small: ${JSON.stringify(thumbnail)}`)
+  if (!thumbnail || thumbnail.width < 64) throw new Error(`Spacious thumbnail should remain legible in the compact row: ${JSON.stringify(thumbnail)}`)
   if ((await page.locator('.variant-results .variant-result-item').count()) !== 3) throw new Error('Three right-aligned results are missing')
   if (!/^\d+%–\d+%$/.test((await page.locator('.result-ratio-range').getAttribute('aria-label')) ?? '')) throw new Error('Three-quality ratio range is missing')
 
@@ -43,6 +43,21 @@ try {
   if ((await page.locator('.comparison-card').count()) !== 3) throw new Error('Comparison preview should show three cards')
   if ((await page.locator('.comparison-card iframe').count()) !== 3) throw new Error('PDF comparison should show three PDF previews')
   if ((await page.locator('.comparison-card header button').count()) !== 3) throw new Error('Comparison downloads are missing')
+  const pdfZoomSelect = page.locator('.comparison-toolbar select')
+  if ((await pdfZoomSelect.inputValue()) !== '1') throw new Error('PDF comparison should default to 100%')
+  await pdfZoomSelect.selectOption('2')
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
+    (frame) => frame.getAttribute('src')?.includes('zoom=200'),
+  ))
+  await page.locator('.job-row').first().focus()
+  await page.keyboard.press('-')
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
+    (frame) => frame.getAttribute('src')?.includes('zoom=175'),
+  ))
+  await pdfZoomSelect.selectOption('fit')
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
+    (frame) => frame.getAttribute('src')?.includes('zoom=page-fit'),
+  ))
   await page.locator('.result-preview > header button').click()
 
   const zipEvent = page.waitForEvent('download')

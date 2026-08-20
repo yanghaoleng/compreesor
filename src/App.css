@@ -1109,8 +1109,19 @@
 }
 
 .job-row.is-selected {
+  border-radius: 4px;
   background: color-mix(in srgb, var(--surface-2) 72%, var(--blue-soft));
-  box-shadow: inset 3px 0 0 var(--primary);
+  box-shadow: none;
+}
+
+.job-row.is-selected:has(+ .job-row.is-selected) {
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.job-row.is-selected + .job-row.is-selected {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .job-row:focus-visible {
@@ -1126,24 +1137,24 @@
 }
 
 .job-row.has-variants {
-  grid-template-columns: 44px minmax(150px, 1fr) minmax(300px, 360px) minmax(74px, auto) auto;
+  grid-template-columns: 44px minmax(150px, 1fr) minmax(260px, 310px) minmax(74px, auto) auto;
 }
 
 .queue-section.is-spacious .job-row {
-  min-height: 94px;
-  grid-template-columns: 76px minmax(0, 1fr) minmax(72px, auto) auto;
-  gap: 14px;
-  padding: 9px 8px;
+  min-height: 82px;
+  grid-template-columns: 66px minmax(0, 1fr) minmax(72px, auto) auto;
+  gap: 10px;
+  padding: 7px 8px;
 }
 
 .queue-section.is-spacious .job-row.has-variants {
-  grid-template-columns: 76px minmax(170px, 1fr) minmax(300px, 360px) minmax(82px, auto) auto;
+  grid-template-columns: 66px minmax(170px, 1fr) minmax(260px, 310px) minmax(82px, auto) auto;
 }
 
 .queue-section.is-spacious .thumbnail {
-  width: 76px;
-  height: 76px;
-  border-radius: 12px;
+  width: 66px;
+  height: 66px;
+  border-radius: 10px;
 }
 
 .queue-section.is-spacious .thumbnail span {
@@ -1165,7 +1176,7 @@
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .variant-result-item {
@@ -1176,6 +1187,8 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+  text-align: right;
+  justify-items: end;
 }
 
 .variant-result-item > b,
@@ -1601,7 +1614,8 @@
   gap: 3px;
 }
 
-.comparison-toolbar button {
+.comparison-toolbar button,
+.comparison-toolbar select {
   min-width: 27px;
   height: 25px;
   padding: 0 6px;
@@ -1612,6 +1626,12 @@
   font-size: 10px;
   font-weight: 850;
   cursor: pointer;
+}
+
+.comparison-toolbar select {
+  min-width: 82px;
+  padding-right: 20px;
+  font-variant-numeric: tabular-nums;
 }
 
 .comparison-card {
@@ -1736,6 +1756,17 @@
   user-select: none;
   will-change: transform;
   transition: transform 90ms ease-out;
+}
+
+.comparison-image-stage.is-fit img,
+.image-preview-stage.is-fit img {
+  position: static;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform: none !important;
 }
 
 .comparison-card > audio {

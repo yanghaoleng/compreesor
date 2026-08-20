@@ -17,6 +17,7 @@ await page.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' }
 await page.getByRole('heading', { name: '输出偏好' }).waitFor()
 if ((await page.locator('.preferences select').count()) !== 3) throw new Error('Output preferences or compression preset are missing before upload')
 if (await page.locator('.preferences select').nth(0).inputValue() !== 'all') throw new Error('Compression should default to all three qualities')
+if ((await page.locator('.preferences select').nth(0).locator('option[value="all"]').innerText()).trim() !== '三档并行') throw new Error('All-quality option copy is incorrect')
 if ((await page.locator('.preferences select').nth(0).locator('option').count()) !== 9) throw new Error('Compression presets should include three qualities and five target sizes')
 if ((await page.locator('.preferences label').nth(1).locator('span').innerText()).trim() !== '图片和 PDF') throw new Error('Image and PDF preference label is incorrect')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="pdf"]').count()) !== 1) throw new Error('Image to PDF output is missing')
@@ -66,7 +67,7 @@ if (brandAfterHover.classes.includes('brand-mark-in') || brandAfterHover.animati
   throw new Error(`Leaving brand hover must not replay the entrance: ${JSON.stringify(brandAfterHover)}`)
 }
 await page.locator('.preferences select').nth(0).selectOption('balanced')
-if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '压缩为原格式') {
+if ((await page.locator('.preferences select').nth(1).locator('option[value="original"]').innerText()).trim() !== '保持原格式') {
   throw new Error('Original image output copy is incorrect')
 }
 if (await page.locator('.preferences select').nth(2).inputValue() !== 'mp3') throw new Error('Video output should default to MP3 extraction')
@@ -248,6 +249,13 @@ await page.waitForFunction(() => !document.querySelector('.result-preview'))
 await firstRow.click()
 await page.locator('.result-preview .image-preview-stage img').waitFor()
 if (!(await page.locator('.result-preview').getAttribute('class'))?.includes('is-pinned')) throw new Error('Row click should pin the bottom preview')
+const selectedRowStyle = await firstRow.evaluate((element) => {
+  const style = getComputedStyle(element)
+  return { boxShadow: style.boxShadow, radius: style.borderRadius }
+})
+if (selectedRowStyle.boxShadow !== 'none' || selectedRowStyle.radius !== '4px') {
+  throw new Error(`Selected rows should use a 4px background without a left accent bar: ${JSON.stringify(selectedRowStyle)}`)
+}
 await page.waitForTimeout(260)
 const previewBox = await page.locator('.result-preview').boundingBox()
 if (!previewBox || Math.abs(previewBox.x) > 2 || Math.abs(previewBox.width - 1440) > 2 || Math.abs(1050 - (previewBox.y + previewBox.height)) > 2) {
@@ -277,12 +285,41 @@ if (
 ) {
   throw new Error(`Preview should open at 100% from the top-left corner: ${JSON.stringify(initialPreviewGeometry)}`)
 }
+await page.locator('.tool-panel').click({ position: { x: 6, y: 6 } })
+await page.waitForFunction(() => !document.querySelector('.result-preview'))
+if (await page.locator('.job-row.is-selected').count()) throw new Error('Clicking blank space should clear file selection')
+const connectedSelectionRadii = await page.locator('.job-row').evaluateAll((rows) => {
+  const selectedRows = rows.slice(0, 2)
+  selectedRows.forEach((row) => row.classList.add('is-selected'))
+  const radii = selectedRows.map((row) => {
+    const style = getComputedStyle(row)
+    return {
+      topLeft: style.borderTopLeftRadius,
+      topRight: style.borderTopRightRadius,
+      bottomLeft: style.borderBottomLeftRadius,
+      bottomRight: style.borderBottomRightRadius,
+    }
+  })
+  selectedRows.forEach((row) => row.classList.remove('is-selected'))
+  return radii
+})
+if (
+  connectedSelectionRadii[0]?.topLeft !== '4px'
+  || connectedSelectionRadii[0]?.bottomLeft !== '0px'
+  || connectedSelectionRadii[1]?.topLeft !== '0px'
+  || connectedSelectionRadii[1]?.bottomLeft !== '4px'
+) {
+  throw new Error(`Connected selections should only round the outer ends: ${JSON.stringify(connectedSelectionRadii)}`)
+}
+await firstRow.click()
+await page.locator('.result-preview').waitFor()
 await firstRow.press('ArrowDown')
 if ((await page.locator('.result-preview > header strong').innerText()).trim() !== 'compreesor-animation.gif') throw new Error('ArrowDown should select and preview the next file')
 await page.locator('.job-row').nth(1).press('ArrowUp')
 if ((await page.locator('.result-preview > header strong').innerText()).trim() !== 'compreesor-fixture.png') throw new Error('ArrowUp should select and preview the previous file')
 await page.keyboard.press('Escape')
 await page.waitForFunction(() => !document.querySelector('.result-preview'))
+if (await page.locator('.job-row.is-selected').count()) throw new Error('Escape should clear file selection')
 
 const comparisonPage = await browser.newPage({ viewport: { width: 1440, height: 1050 }, deviceScaleFactor: 1 })
 await comparisonPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
@@ -299,15 +336,27 @@ if (await comparisonPage.locator('.variant-hover-preview').count()) throw new Er
 const qualityColumns = await comparisonPage.locator('.variant-result-item').evaluateAll((items) => items.map((item) => {
   const box = item.getBoundingClientRect()
   const style = getComputedStyle(item)
-  return { x: box.x, y: box.y, width: box.width, border: style.borderWidth, background: style.backgroundColor }
+  const title = item.querySelector('b')?.getBoundingClientRect()
+  return {
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    border: style.borderWidth,
+    background: style.backgroundColor,
+    textAlign: style.textAlign,
+    titleRightGap: title ? box.right - title.right : null,
+  }
 }))
+const compactComparisonRowHeight = await comparisonPage.locator('.job-row').first().evaluate((element) => element.getBoundingClientRect().height)
 if (
   qualityColumns.length !== 3
   || qualityColumns.some((column) => column.border !== '0px' || column.background !== 'rgba(0, 0, 0, 0)')
+  || qualityColumns.some((column) => column.textAlign !== 'right' || column.titleRightGap === null || Math.abs(column.titleRightGap) > 1)
   || Math.max(...qualityColumns.map((column) => column.y)) - Math.min(...qualityColumns.map((column) => column.y)) > 1
   || Math.max(...qualityColumns.map((column) => column.width)) - Math.min(...qualityColumns.map((column) => column.width)) > 1
+  || compactComparisonRowHeight > 84
 ) {
-  throw new Error(`Quality results should be three aligned borderless columns: ${JSON.stringify(qualityColumns)}`)
+  throw new Error(`Quality results should be compact, right-aligned borderless columns: ${JSON.stringify({ qualityColumns, compactComparisonRowHeight })}`)
 }
 const comparisonRow = comparisonPage.locator('.job-row').first()
 await comparisonRow.hover()
@@ -376,7 +425,22 @@ const zoomedOutTransforms = await comparisonPage.locator('.comparison-image-stag
 if (zoomedOutTransforms.some((transform) => !transform?.includes('scale(0.75)'))) {
   throw new Error(`Comparison zoom-out should work below the 100% default: ${JSON.stringify(zoomedOutTransforms)}`)
 }
-await comparisonPage.locator('.comparison-toolbar button').nth(1).click()
+const zoomSelect = comparisonPage.locator('.comparison-toolbar select')
+const zoomOptions = await zoomSelect.locator('option').allInnerTexts()
+if (!zoomOptions.includes('200%') || !zoomOptions.includes('全部显示')) throw new Error(`Common zoom options are incomplete: ${zoomOptions.join(' | ')}`)
+await zoomSelect.selectOption('2')
+const doubledTransforms = await comparisonPage.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
+if (doubledTransforms.some((transform) => !transform?.includes('scale(2)'))) throw new Error(`200% zoom should apply to all previews: ${JSON.stringify(doubledTransforms)}`)
+await zoomSelect.selectOption('fit')
+if ((await comparisonPage.locator('.comparison-image-stage.is-fit').count()) !== 3) throw new Error('Show-all mode should apply to all three previews')
+await zoomSelect.selectOption('1')
+await comparisonRow.focus()
+await comparisonPage.keyboard.press('=')
+const keyboardZoomIn = await comparisonPage.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
+if (keyboardZoomIn.some((transform) => !transform?.includes('scale(1.25)'))) throw new Error(`= should zoom all previews in: ${JSON.stringify(keyboardZoomIn)}`)
+await comparisonPage.keyboard.press('-')
+const keyboardZoomOut = await comparisonPage.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
+if (keyboardZoomOut.some((transform) => !transform?.includes('scale(1)'))) throw new Error(`- should zoom all previews out: ${JSON.stringify(keyboardZoomOut)}`)
 await comparisonPage.locator('.comparison-toolbar button').last().click()
 const comparisonTransforms = await comparisonPage.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
 if (comparisonTransforms.length !== 3 || comparisonTransforms.some((transform) => !transform?.includes('scale(1.25)'))) {
