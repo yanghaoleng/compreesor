@@ -16,10 +16,11 @@ const capabilities = Object.freeze({
 
 contextBridge.exposeInMainWorld('compreesorDesktop', Object.freeze({
   isDesktop: true,
-  apiVersion: 1,
+  apiVersion: 2,
   capabilities,
   pathForFile,
   compressFile: (payload) => ipcRenderer.invoke('desktop:compress-file', payload),
+  compressVariants: (payload) => ipcRenderer.invoke('desktop:compress-variants', payload),
   replaceWithData: (payload) => ipcRenderer.invoke('desktop:replace-with-data', payload),
   writeVariants: (payload) => ipcRenderer.invoke('desktop:write-variants', payload),
   readResultFile: (path) => ipcRenderer.invoke('desktop:read-result-file', path),

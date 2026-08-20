@@ -118,10 +118,12 @@ await page.locator('input[type="file"]').setInputFiles([
 if (await page.locator('.drop-zone').count()) throw new Error('Drop zone should hide after files are added')
 await page.getByRole('button', { name: '继续上传' }).waitFor()
 await page.getByRole('button', { name: '清空' }).waitFor()
-await page.getByRole('button', { name: '打包下载' }).waitFor()
 
 const processingRow = page.locator('.job-row.status-processing').first()
 await processingRow.waitFor({ timeout: 20_000 })
+if (await page.getByRole('button', { name: '打包下载' }).count()) {
+  throw new Error('ZIP download should stay hidden while files are processing')
+}
 const processingCopyBox = await processingRow.locator('.job-copy').boundingBox()
 const processingStateBox = await processingRow.locator('.job-state').boundingBox()
 if (!processingCopyBox || !processingStateBox || processingStateBox.x <= processingCopyBox.x) {
@@ -136,6 +138,12 @@ await page.waitForFunction(
 
 const failed = await page.locator('.job-row.status-error').count()
 if (failed) throw new Error(`Compression failed: ${await page.locator('.job-list').innerText()}`)
+const packageButton = page.getByRole('button', { name: '打包下载' })
+await packageButton.waitFor()
+const packageEntryAnimation = await packageButton.evaluate((element) => getComputedStyle(element).animationName)
+if (!packageEntryAnimation.includes('package-button-spring-in')) {
+  throw new Error(`ZIP download entrance animation is missing: ${packageEntryAnimation}`)
+}
 
 const rows = await page.locator('.job-row').allInnerTexts()
 if (!rows.some((row) => row.includes('GIF'))) throw new Error('GIF did not finish')
@@ -158,8 +166,25 @@ const rowBorders = await page.locator('.job-row').first().evaluate((element) => 
   const style = getComputedStyle(element)
   return { top: style.borderTopWidth, right: style.borderRightWidth, bottom: style.borderBottomWidth, radius: style.borderRadius }
 })
-if (rowBorders.top !== '0px' || rowBorders.right !== '0px' || rowBorders.bottom === '0px' || rowBorders.radius !== '0px') {
+if (rowBorders.top !== '0px' || rowBorders.right !== '0px' || rowBorders.bottom !== '0px' || rowBorders.radius !== '0px') {
   throw new Error(`File rows should use separators only: ${JSON.stringify(rowBorders)}`)
+}
+const secondRowBorderTop = await page.locator('.job-row').nth(1).evaluate((element) => getComputedStyle(element).borderTopWidth)
+if (secondRowBorderTop === '0px') throw new Error('Adjacent file rows should be separated by a single line')
+const listScrollBehavior = await page.locator('.job-list').evaluate((element) => {
+  const list = element
+  list.style.maxHeight = '96px'
+  const style = getComputedStyle(list)
+  const result = {
+    overflowY: style.overflowY,
+    overscrollBehaviorY: style.overscrollBehaviorY,
+    hasInternalOverflow: list.scrollHeight > list.clientHeight,
+  }
+  list.style.maxHeight = ''
+  return result
+})
+if (listScrollBehavior.overflowY !== 'auto' || listScrollBehavior.overscrollBehaviorY !== 'contain' || !listScrollBehavior.hasInternalOverflow) {
+  throw new Error(`File list should own its bounded scrolling: ${JSON.stringify(listScrollBehavior)}`)
 }
 const donateTrigger = page.getByRole('button', { name: '打赏作者' })
 await donateTrigger.waitFor()
@@ -176,6 +201,9 @@ if (Math.max(...footerLinkBoxes.map((box) => box.y)) - Math.min(...footerLinkBox
 }
 if (!(footerLinkBoxes[3].x > footerLinkBoxes[2].x)) throw new Error('Donation trigger should sit at the bottom right')
 
+await page.waitForFunction(() => document.querySelector('.download-all')?.getAnimations().every(
+  (animation) => animation.playState === 'finished',
+))
 const clearBox = await page.getByRole('button', { name: '清空' }).boundingBox()
 const addBox = await page.getByRole('button', { name: '继续上传' }).boundingBox()
 const zipBox = await page.getByRole('button', { name: '打包下载' }).boundingBox()
@@ -250,12 +278,15 @@ const comparisonTransforms = await comparisonPage.locator('.comparison-image-sta
 if (comparisonTransforms.length !== 3 || comparisonTransforms.some((transform) => !transform?.includes('scale(1.25)'))) {
   throw new Error(`Comparison zoom should apply to all quality previews: ${JSON.stringify(comparisonTransforms)}`)
 }
+await comparisonPage.waitForFunction(() => document.querySelector('.result-preview')?.getAnimations().every(
+  (animation) => animation.playState === 'finished',
+))
 const previewBeforeResize = await comparisonPage.locator('.result-preview').boundingBox()
 const resizeHandle = await comparisonPage.locator('.preview-resize-handle').boundingBox()
 if (!previewBeforeResize || !resizeHandle) throw new Error('Preview resize handle is missing')
 await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y + resizeHandle.height / 2)
 await comparisonPage.mouse.down()
-await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y - 80)
+await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y - 80, { steps: 5 })
 await comparisonPage.mouse.up()
 const previewAfterResize = await comparisonPage.locator('.result-preview').boundingBox()
 if (!previewAfterResize || previewAfterResize.height < previewBeforeResize.height + 60) {
@@ -273,15 +304,29 @@ if (single.suggestedFilename() !== 'compreesor-fixture-压缩.png') {
 }
 
 await page.evaluate(() => {
-  const panel = document.querySelector('.tool-panel')
-  if (panel instanceof HTMLElement) panel.style.minHeight = '1500px'
+  const footer = document.querySelector('.site-footer')
+  if (footer instanceof HTMLElement) {
+    footer.style.position = 'relative'
+    footer.style.top = '1200px'
+  }
   Math.random = () => 0
   window.scrollTo(0, 0)
 })
 
 const zipDownload = page.waitForEvent('download')
-await page.getByRole('button', { name: '打包下载' }).click()
+await packageButton.click()
 const archive = await zipDownload
+const downloadedPackageButton = page.getByRole('button', { name: '已下载' })
+await downloadedPackageButton.waitFor()
+if (!(await downloadedPackageButton.isDisabled())) throw new Error('Downloaded ZIP state should pause repeat clicks')
+await page.waitForFunction(() => getComputedStyle(document.querySelector('.download-all.is-downloaded')).backgroundColor === 'rgb(21, 128, 61)')
+const downloadedPackageStyle = await downloadedPackageButton.evaluate((element) => {
+  const style = getComputedStyle(element)
+  return { backgroundColor: style.backgroundColor, opacity: style.opacity, animationName: style.animationName }
+})
+if (!downloadedPackageStyle.backgroundColor.includes('21, 128, 61') || downloadedPackageStyle.opacity !== '1' || !downloadedPackageStyle.animationName.includes('package-button-down-spring')) {
+  throw new Error(`Downloaded ZIP state is unclear: ${JSON.stringify(downloadedPackageStyle)}`)
+}
 await page.locator('.donate-popover').waitFor()
 await page.locator('.donate-popover.is-viewport-pinned').waitFor()
 await page.waitForFunction(() => document.querySelector('.spring-scale-word')?.getAnimations().length)
@@ -314,6 +359,7 @@ if (Math.abs(1050 - (pinnedPopoverBox.y + pinnedPopoverBox.height) - 16) > 3) {
 if (archive.suggestedFilename() !== 'compr、compr等3个文件的压缩.zip') {
   throw new Error(`ZIP name should summarize up to two five-character file names: ${archive.suggestedFilename()}`)
 }
+await page.getByRole('button', { name: '再次下载' }).waitFor({ timeout: 7_000 })
 await page.screenshot({ path: '/tmp/compreesor-donate-pinned.png' })
 await donateTrigger.scrollIntoViewIfNeeded()
 await page.waitForFunction(() => !document.querySelector('.donate-popover')?.classList.contains('is-viewport-pinned'))
@@ -339,8 +385,11 @@ const closeAnimation = await page.locator('.donate-popover').evaluate((element) 
 if (!closeAnimation.includes('donate-pop-out')) throw new Error('Donation popover closing animation is missing')
 await page.locator('.donate-popover').waitFor({ state: 'detached' })
 await page.evaluate(() => {
-  const panel = document.querySelector('.tool-panel')
-  if (panel instanceof HTMLElement) panel.style.minHeight = ''
+  const footer = document.querySelector('.site-footer')
+  if (footer instanceof HTMLElement) {
+    footer.style.position = ''
+    footer.style.top = ''
+  }
   window.scrollTo(0, document.body.scrollHeight)
 })
 await donateTrigger.click()

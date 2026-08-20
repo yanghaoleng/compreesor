@@ -1,4 +1,4 @@
-import type { CompressionPreset } from './types'
+import type { CompressionPreset, QualityPreset } from './types'
 
 export type DesktopNativeFormat =
   | 'original'
@@ -34,7 +34,7 @@ export type DesktopResultFile = {
 
 export type CompreesorDesktopBridge = {
   readonly isDesktop: true
-  readonly apiVersion: 1
+  readonly apiVersion: 2
   readonly capabilities: {
     readonly nativeInputExtensions: readonly string[]
     readonly nativeOutputFormats: readonly DesktopNativeFormat[]
@@ -47,6 +47,11 @@ export type CompreesorDesktopBridge = {
     preset?: CompressionPreset
     quality?: number
   }): Promise<DesktopCompressionResult>
+  compressVariants(payload: {
+    path: string
+    format?: DesktopNativeFormat
+    variants: Array<{ preset: QualityPreset; outputName: string }>
+  }): Promise<DesktopCompressionResult[]>
   replaceWithData(payload: {
     sourcePath: string
     outputExtension: string

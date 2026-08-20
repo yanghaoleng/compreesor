@@ -35,6 +35,8 @@ export type Messages = {
   continueUpload: string
   clear: string
   packageDownload: string
+  packageDownloaded: string
+  packageDownloadAgain: string
   zipping: string
   files: (count: number) => string
   processingCount: (count: number) => string
@@ -122,7 +124,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: '压缩为原格式', original: '原格式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '选择或拖入文件',
     releaseDrop: '松开即可添加', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 和常见视频',
-    chooseFiles: '选择文件', continueUpload: '继续上传', clear: '清空', packageDownload: '打包下载',
+    chooseFiles: '选择文件', continueUpload: '继续上传', clear: '清空', packageDownload: '打包下载', packageDownloaded: '已下载', packageDownloadAgain: '再次下载',
     zipping: '正在打包', files: (count) => `${count} 个文件`, processingCount: (count) => `正在处理 ${count} 个`,
     completedSummary: (count, saved) => `${count} 个已完成${saved > 0 ? ` · 节省 ${saved}%` : ''}`,
     imageKind: '图片', videoKind: '视频', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 份', waiting: '等待处理', processing: '正在处理',
@@ -163,7 +165,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: '壓縮為原格式', original: '原格式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '選擇或拖入檔案',
     releaseDrop: '放開即可新增', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 與常見影片',
-    chooseFiles: '選擇檔案', continueUpload: '繼續上傳', clear: '清空', packageDownload: '打包下載',
+    chooseFiles: '選擇檔案', continueUpload: '繼續上傳', clear: '清空', packageDownload: '打包下載', packageDownloaded: '已下載', packageDownloadAgain: '再次下載',
     zipping: '正在打包', files: (count) => `${count} 個檔案`, processingCount: (count) => `正在處理 ${count} 個`,
     completedSummary: (count, saved) => `${count} 個已完成${saved > 0 ? ` · 節省 ${saved}%` : ''}`,
     imageKind: '圖片', videoKind: '影片', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 份', waiting: '等待處理', processing: '正在處理',
@@ -204,7 +206,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: 'Compress in original format', original: 'Original', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV with alpha', extractMp3: 'Extract MP3', chooseDrop: 'Choose or drop files',
     releaseDrop: 'Release to add files', formats: 'JPG, PNG, WebP, AVIF, JXL, SVG, GIF, PDF and common video formats',
-    chooseFiles: 'Choose files', continueUpload: 'Add files', clear: 'Clear', packageDownload: 'Download ZIP',
+    chooseFiles: 'Choose files', continueUpload: 'Add files', clear: 'Clear', packageDownload: 'Download ZIP', packageDownloaded: 'Downloaded', packageDownloadAgain: 'Download again',
     zipping: 'Creating ZIP', files: (count) => `${count} file${count === 1 ? '' : 's'}`,
     processingCount: (count) => `Processing ${count}`, completedSummary: (count, saved) => `${count} completed${saved > 0 ? ` · ${saved}% smaller` : ''}`,
     imageKind: 'Image', videoKind: 'Video', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 results', waiting: 'Waiting', processing: 'Processing',
@@ -245,7 +247,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: '元の形式で圧縮', original: '元の形式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: '透過 MOV', extractMp3: 'MP3 を抽出', chooseDrop: 'ファイルを選択またはドロップ',
     releaseDrop: '離して追加', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF、一般的な動画形式',
-    chooseFiles: 'ファイルを選択', continueUpload: 'さらに追加', clear: 'クリア', packageDownload: 'まとめてダウンロード',
+    chooseFiles: 'ファイルを選択', continueUpload: 'さらに追加', clear: 'クリア', packageDownload: 'まとめてダウンロード', packageDownloaded: 'ダウンロード済み', packageDownloadAgain: 'もう一度ダウンロード',
     zipping: 'ZIP 作成中', files: (count) => `${count} ファイル`, processingCount: (count) => `${count} 件を処理中`,
     completedSummary: (count, saved) => `${count} 件完了${saved > 0 ? ` · ${saved}% 削減` : ''}`,
     imageKind: '画像', videoKind: '動画', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 種類', waiting: '待機中', processing: '処理中',

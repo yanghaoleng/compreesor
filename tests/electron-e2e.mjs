@@ -25,6 +25,8 @@ const app = await electron.launch({ executablePath, args: [appDirectory], env: e
 try {
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
+  await window.evaluate(() => window.localStorage.setItem('compreesor-language', 'zh'))
+  await window.reload({ waitUntil: 'domcontentloaded' })
   await window.getByRole('heading', { name: '输出偏好' }).waitFor()
   if ((await window.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompressor Studio') throw new Error('Electron brand is out of sync')
   if (await window.locator('.preferences select').first().inputValue() !== 'all') throw new Error('Electron should default to all qualities')

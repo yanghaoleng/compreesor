@@ -15,59 +15,19 @@ import { basename, dirname, extname, join, parse, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { optimize } from 'svgo'
+import {
+  QUALITY_PRESETS,
+  SUPPORTED_EXTENSIONS,
+  classifyName,
+  normalizeQualityPreset,
+} from '@compreesor/core'
 
-const STATIC_IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.svg'])
-const GIF_EXTENSIONS = new Set(['.gif'])
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.mpeg', '.mpg'])
+export { QUALITY_PRESETS, normalizeQualityPreset }
+
+const STATIC_IMAGE_EXTENSIONS = new Set(SUPPORTED_EXTENSIONS.image.filter((extension) => extension !== 'jxl').map((extension) => `.${extension}`))
+const GIF_EXTENSIONS = new Set(SUPPORTED_EXTENSIONS.gif.map((extension) => `.${extension}`))
+const VIDEO_EXTENSIONS = new Set(SUPPORTED_EXTENSIONS.video.map((extension) => `.${extension}`))
 const ALL_EXTENSIONS = new Set([...STATIC_IMAGE_EXTENSIONS, ...GIF_EXTENSIONS, ...VIDEO_EXTENSIONS])
-
-const PRESET_ALIASES = new Map([
-  ['extreme', 'extreme'],
-  ['max', 'extreme'],
-  ['极限', 'extreme'],
-  ['balanced', 'balanced'],
-  ['enough', 'balanced'],
-  ['够用', 'balanced'],
-  ['lossless', 'lossless'],
-  ['无损', 'lossless'],
-])
-
-export const QUALITY_PRESETS = Object.freeze({
-  extreme: Object.freeze({
-    label: '极限',
-    image: Object.freeze({ quality: 55, avifQuality: 35, effort: 8, maxDimension: 1600 }),
-    png: Object.freeze({ compressionLevel: 9, effort: 10, palette: true, quality: 60, colours: 128, dither: 0.75 }),
-    svg: Object.freeze({ multipass: true, floatPrecision: 2, preserveGeometry: false }),
-    gif: Object.freeze({ fps: 10, maxWidth: 640, maxColors: 64, dither: 'none' }),
-    video: Object.freeze({ maxHeight: 480, h264Crf: 32, h264Preset: 'slow', vp9Crf: 40, vp9CpuUsed: 2, audioBitrate: '80k' }),
-    mp3: Object.freeze({ bitrate: '96k' }),
-  }),
-  balanced: Object.freeze({
-    label: '够用',
-    image: Object.freeze({ quality: 80, avifQuality: 60, effort: 6, maxDimension: 2560 }),
-    png: Object.freeze({ compressionLevel: 9, effort: 7, palette: false }),
-    svg: Object.freeze({ multipass: true, floatPrecision: 3, preserveGeometry: false }),
-    gif: Object.freeze({ fps: 12, maxWidth: 960, maxColors: 128, dither: 'bayer' }),
-    video: Object.freeze({ maxHeight: 720, h264Crf: 28, h264Preset: 'veryfast', vp9Crf: 34, vp9CpuUsed: 4, audioBitrate: '128k' }),
-    mp3: Object.freeze({ bitrate: '160k' }),
-  }),
-  lossless: Object.freeze({
-    label: '无损',
-    image: Object.freeze({ quality: 100, avifQuality: 100, effort: 8, maxDimension: null, lossless: true }),
-    png: Object.freeze({ compressionLevel: 9, effort: 10, palette: false }),
-    svg: Object.freeze({ multipass: true, preserveGeometry: true }),
-    gif: Object.freeze({ copy: true }),
-    video: Object.freeze({ copy: true }),
-    // MP3 本身不支持无损编码；320k 是该格式的最高保真映射。
-    mp3: Object.freeze({ bitrate: '320k', inherentlyLossy: true }),
-  }),
-})
-
-export function normalizeQualityPreset(preset = 'balanced') {
-  const normalized = PRESET_ALIASES.get(String(preset).trim().toLowerCase())
-  if (!normalized) throw new Error(`未知质量预设：${preset}`)
-  return normalized
-}
 
 export function resolveCompressionSettings(options = {}) {
   const preset = normalizeQualityPreset(options.preset ?? 'balanced')
@@ -94,7 +54,7 @@ export function resolveCompressionSettings(options = {}) {
     image,
     png: { ...base.png },
     svg: { ...base.svg },
-    gif: { ...base.gif },
+    gif: 'copy' in base.gif ? { ...base.gif } : { ...base.gif, maxWidth: base.gif.maxDimension },
     video,
     mp3: { ...base.mp3 },
     qualityOverride: quality,
@@ -102,11 +62,9 @@ export function resolveCompressionSettings(options = {}) {
 }
 
 export function classifyPath(filePath) {
-  const extension = extname(filePath).toLowerCase()
-  if (STATIC_IMAGE_EXTENSIONS.has(extension)) return 'image'
-  if (GIF_EXTENSIONS.has(extension)) return 'gif'
-  if (VIDEO_EXTENSIONS.has(extension)) return 'video'
-  return null
+  const kind = classifyName(filePath)
+  if (kind === 'image' && !STATIC_IMAGE_EXTENSIONS.has(extname(filePath).toLowerCase())) return null
+  return kind === 'pdf' ? null : kind
 }
 
 export function formatBytes(bytes) {
@@ -230,34 +188,8 @@ function runFfmpeg(binary, args) {
   })
 }
 
-async function compressStaticImage(inputPath, outputPath, format, settings) {
-  if (format === 'svg') {
-    const source = await readFile(inputPath, 'utf8')
-    const overrides = settings.svg.preserveGeometry
-      ? {
-          cleanupNumericValues: false,
-          convertPathData: false,
-          convertTransform: false,
-          mergePaths: false,
-        }
-      : {
-          cleanupNumericValues: { floatPrecision: settings.svg.floatPrecision },
-          convertPathData: { floatPrecision: settings.svg.floatPrecision },
-          convertTransform: { floatPrecision: settings.svg.floatPrecision },
-        }
-    const result = optimize(source, {
-      path: inputPath,
-      multipass: settings.svg.multipass,
-      plugins: [
-        { name: 'preset-default', params: { overrides } },
-        'removeScripts',
-      ],
-    })
-    await writeFile(outputPath, result.data)
-    return
-  }
-
-  let pipeline = sharp(inputPath, { failOn: 'none', limitInputPixels: 268_402_689 }).rotate()
+function configureRasterPipeline(source, format, settings) {
+  let pipeline = source
   if (settings.image.maxDimension) {
     pipeline = pipeline.resize({
       width: settings.image.maxDimension,
@@ -276,14 +208,49 @@ async function compressStaticImage(inputPath, outputPath, format, settings) {
     pipeline = pipeline.png(settings.png)
   } else if (format === 'webp') {
     pipeline = pipeline.webp(settings.image.lossless
-      ? { lossless: true, effort: settings.image.effort }
-      : { quality: settings.image.quality, effort: settings.image.effort, smartSubsample: true })
+      ? { lossless: true, effort: Math.min(6, settings.image.effort) }
+      : { quality: settings.image.quality, effort: Math.min(6, settings.image.effort), smartSubsample: true })
   } else if (format === 'avif') {
     pipeline = pipeline.avif(settings.image.lossless
       ? { lossless: true, effort: settings.image.effort }
       : { quality: settings.image.avifQuality, effort: settings.image.effort })
   }
   else throw new Error(`图片不支持输出为 ${format}`)
+  return pipeline
+}
+
+function optimizeSvgSource(source, inputPath, settings) {
+  const overrides = settings.svg.preserveGeometry
+    ? {
+        cleanupNumericValues: false,
+        convertPathData: false,
+        convertTransform: false,
+        mergePaths: false,
+      }
+    : {
+        cleanupNumericValues: { floatPrecision: settings.svg.floatPrecision },
+        convertPathData: { floatPrecision: settings.svg.floatPrecision },
+        convertTransform: { floatPrecision: settings.svg.floatPrecision },
+      }
+  return optimize(source, {
+    path: inputPath,
+    multipass: settings.svg.multipass,
+    plugins: [
+      { name: 'preset-default', params: { overrides } },
+      'removeScripts',
+    ],
+  }).data
+}
+
+async function compressStaticImage(inputPath, outputPath, format, settings) {
+  if (format === 'svg') {
+    const source = await readFile(inputPath, 'utf8')
+    await writeFile(outputPath, optimizeSvgSource(source, inputPath, settings))
+    return
+  }
+
+  const source = sharp(inputPath, { failOn: 'none', limitInputPixels: 268_402_689 }).rotate()
+  const pipeline = configureRasterPipeline(source, format, settings)
   await pipeline.toFile(outputPath)
 }
 
@@ -345,6 +312,91 @@ async function compressVideo(inputPath, outputPath, format, ffmpegPath, settings
     '-movflags', '+faststart',
     outputPath,
   ])
+}
+
+export async function compressImageVariants(input, variants) {
+  const inputPath = resolve(input)
+  if (classifyPath(inputPath) !== 'image') throw new Error('批量质量输出只支持静态图片与 SVG')
+  if (!Array.isArray(variants) || variants.length === 0) throw new Error('没有可生成的质量版本')
+
+  const sourceInfo = await stat(inputPath)
+  const sourceExtension = extname(inputPath).toLowerCase()
+  const prepared = variants.map((variant) => {
+    const requestedFormat = variant.format ?? 'original'
+    const format = imageFormatFor(inputPath, requestedFormat)
+    if (!['jpeg', 'png', 'webp', 'avif', 'svg'].includes(format)) throw new Error(`图片不能输出为 ${format}`)
+    if (format === 'svg' && sourceExtension !== '.svg') throw new Error('位图不能转换为 SVG')
+    const outputName = basename(String(variant.outputName ?? ''))
+    if (!outputName || outputName !== variant.outputName) throw new Error('压缩结果文件名无效')
+    const expectedExtension = extensionFor('image', inputPath, requestedFormat)
+    if (extname(outputName).toLowerCase() !== expectedExtension) throw new Error(`压缩结果应使用 ${expectedExtension} 后缀`)
+    const targetPath = join(dirname(inputPath), outputName)
+    const temporaryPath = join(dirname(inputPath), `.${outputName}.compreesor-${randomUUID()}${expectedExtension}`)
+    return {
+      preset: normalizeQualityPreset(variant.preset),
+      settings: resolveCompressionSettings({ preset: variant.preset }),
+      format,
+      outputName,
+      targetPath,
+      temporaryPath,
+      expectedExtension,
+    }
+  })
+
+  if (new Set(prepared.map((item) => item.targetPath)).size !== prepared.length) throw new Error('压缩结果文件名重复')
+  for (const item of prepared) {
+    if (await exists(item.targetPath)) throw new Error(`目标文件已存在，未保存：${item.targetPath}`)
+  }
+
+  const completedPaths = []
+  try {
+    if (sourceExtension === '.svg') {
+      const source = await readFile(inputPath, 'utf8')
+      await Promise.all(prepared.map((item) => writeFile(
+        item.temporaryPath,
+        optimizeSvgSource(source, inputPath, item.settings),
+        { flag: 'wx', mode: sourceInfo.mode },
+      )))
+    } else {
+      const sharedPipeline = sharp(inputPath, { failOn: 'none', limitInputPixels: 268_402_689 }).rotate()
+      await Promise.all(prepared.map(async (item) => {
+        if (item.preset === 'lossless' && item.format === 'jpeg' && sourceExtension === item.expectedExtension) {
+          await copyFile(inputPath, item.temporaryPath)
+          return
+        }
+        await configureRasterPipeline(sharedPipeline.clone(), item.format, item.settings).toFile(item.temporaryPath)
+        const outputInfo = await stat(item.temporaryPath)
+        if (sourceExtension === item.expectedExtension && outputInfo.size >= sourceInfo.size) {
+          await rm(item.temporaryPath, { force: true })
+          await copyFile(inputPath, item.temporaryPath)
+        }
+      }))
+    }
+
+    for (const item of prepared) {
+      await rename(item.temporaryPath, item.targetPath)
+      completedPaths.push(item.targetPath)
+    }
+    return Promise.all(prepared.map(async (item) => {
+      const outputInfo = await stat(item.targetPath)
+      return {
+        preset: item.preset,
+        inputPath,
+        outputPath: item.targetPath,
+        outputName: item.outputName,
+        originalBytes: sourceInfo.size,
+        outputBytes: outputInfo.size,
+        unchanged: outputInfo.size === sourceInfo.size,
+        sourceRemoved: false,
+      }
+    }))
+  } catch (error) {
+    await Promise.all([
+      ...prepared.map((item) => rm(item.temporaryPath, { force: true })),
+      ...completedPaths.map((filePath) => rm(filePath, { force: true })),
+    ])
+    throw error
+  }
 }
 
 async function replaceAtomically(sourcePath, temporaryPath, targetPath) {
