@@ -35,6 +35,12 @@ export const TARGET_PRESET_BYTES: Readonly<Record<TargetSizePreset, number>>
 export function normalizeQualityPreset(preset?: unknown): QualityPreset
 export function isTargetSizePreset(preset: CompressionPreset | string): preset is TargetSizePreset
 export function targetBytesForPreset(preset: CompressionPreset): number | null
+export function scaledImageDimensions(
+  width: number,
+  height: number,
+  scale: number,
+  minimumShortSide?: number,
+): { width: number; height: number }
 export function qualityPresetFor(preset: CompressionPreset): QualityPreset
 export function extensionOf(name: string): string
 export function baseName(name: string): string

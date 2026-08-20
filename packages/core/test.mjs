@@ -7,6 +7,7 @@ import {
   extensionOf,
   normalizeQualityPreset,
   qualityPresetFor,
+  scaledImageDimensions,
   targetBytesForPreset,
 } from './index.js'
 
@@ -18,6 +19,10 @@ assert.equal(qualityPresetFor('target-100k'), 'extreme')
 assert.equal(qualityPresetFor('target-5m'), 'balanced')
 assert.equal(targetBytesForPreset('target-500k'), 500 * 1024)
 assert.equal(targetBytesForPreset('lossless'), null)
+assert.deepEqual(scaledImageDimensions(4000, 1200, 0.4, 96), { width: 1600, height: 480 })
+assert.deepEqual(scaledImageDimensions(1000, 100, 0.42, 96), { width: 960, height: 96 })
+assert.deepEqual(scaledImageDimensions(900, 3000, 2), { width: 900, height: 3000 })
+assert.throws(() => scaledImageDimensions(0, 100, 0.5), /正数/)
 assert.equal(extensionOf('PHOTO.JPEG'), 'jpeg')
 assert.equal(baseName('a/b:c?.png'), 'a-b-c-')
 assert.equal(classifyName('scan.PDF'), 'pdf')

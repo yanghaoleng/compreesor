@@ -98,6 +98,23 @@ export function targetBytesForPreset(preset) {
   return isTargetSizePreset(preset) ? TARGET_PRESET_BYTES[preset] : null
 }
 
+export function scaledImageDimensions(width, height, scale, minimumShortSide = 0) {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    throw new TypeError('图片尺寸必须是正数')
+  }
+  if (!Number.isFinite(scale) || scale <= 0) throw new TypeError('缩放比例必须是正数')
+
+  const safeMinimum = Number.isFinite(minimumShortSide) ? Math.max(0, minimumShortSide) : 0
+  const minimumScale = safeMinimum > 0
+    ? Math.min(1, safeMinimum / Math.min(width, height))
+    : 0
+  const safeScale = Math.min(1, Math.max(scale, minimumScale))
+  return {
+    width: Math.max(1, Math.round(width * safeScale)),
+    height: Math.max(1, Math.round(height * safeScale)),
+  }
+}
+
 export function qualityPresetFor(preset) {
   if (!isTargetSizePreset(preset)) return preset
   return preset === 'target-100k' || preset === 'target-500k' ? 'extreme' : 'balanced'

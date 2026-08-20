@@ -1,7 +1,6 @@
 import {
   CheckCircle,
   DownloadSimple,
-  Eye,
   FileImage,
   FilePdf,
   FilmStrip,
@@ -12,7 +11,6 @@ import { useEffect, useRef } from 'react'
 import type { Messages } from '../i18n'
 import {
   formatBytes,
-  isPdfVariant,
   kindLabel,
   qualityLabel,
   statusText,
@@ -28,11 +26,22 @@ type JobListProps = {
   locale: Locale
   messages: Messages
   onDownload: (job: MediaJob, variant?: ResultVariant) => void | Promise<void>
-  onPreview: (jobId: string) => void
+  selectedJobId: string | null
+  onPreviewHover: (jobId: string | null) => void
+  onPreviewPin: (jobId: string) => void
   onRetry: (job: MediaJob) => void | Promise<void>
 }
 
-export function JobList({ jobs, locale, messages, onDownload, onPreview, onRetry }: JobListProps) {
+export function JobList({
+  jobs,
+  locale,
+  messages,
+  onDownload,
+  selectedJobId,
+  onPreviewHover,
+  onPreviewPin,
+  onRetry,
+}: JobListProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const previousProcessingIdsRef = useRef(new Set<string>())
 
@@ -63,6 +72,20 @@ export function JobList({ jobs, locale, messages, onDownload, onPreview, onRetry
     return () => window.cancelAnimationFrame(frame)
   }, [jobs])
 
+  const selectAdjacentJob = (jobId: string, direction: -1 | 1) => {
+    const selectableJobs = jobs.filter((job) => job.status === 'done' && job.resultUrl)
+    const currentIndex = selectableJobs.findIndex((job) => job.id === jobId)
+    if (currentIndex < 0 || selectableJobs.length === 0) return
+    const nextJob = selectableJobs[(currentIndex + direction + selectableJobs.length) % selectableJobs.length]
+    onPreviewPin(nextJob.id)
+    window.requestAnimationFrame(() => {
+      const nextRow = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-job-id]') ?? [])]
+        .find((row) => row.dataset.jobId === nextJob.id)
+      nextRow?.focus({ preventScroll: true })
+      nextRow?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+
   return (
     <div className="job-list" ref={listRef}>
       {jobs.map((job) => {
@@ -75,9 +98,27 @@ export function JobList({ jobs, locale, messages, onDownload, onPreview, onRetry
 
         return (
           <article
-            className={`job-row status-${job.status}${job.variants.length > 1 ? ' has-variants' : ''}`}
+            className={`job-row status-${job.status}${job.variants.length > 1 ? ' has-variants' : ''}${selectedJobId === job.id ? ' is-selected' : ''}`}
             data-job-id={job.id}
             key={job.id}
+            tabIndex={job.status === 'done' && job.resultUrl ? 0 : undefined}
+            aria-current={selectedJobId === job.id ? 'true' : undefined}
+            onPointerEnter={() => {
+              if (job.status === 'done' && job.resultUrl) onPreviewHover(job.id)
+            }}
+            onPointerLeave={() => onPreviewHover(null)}
+            onClick={(event) => {
+              if (job.status !== 'done' || !job.resultUrl) return
+              if (event.target instanceof Element && event.target.closest('button, a, input, select, textarea')) return
+              onPreviewPin(job.id)
+              event.currentTarget.focus({ preventScroll: true })
+            }}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return
+              if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+              event.preventDefault()
+              selectAdjacentJob(job.id, event.key === 'ArrowDown' ? 1 : -1)
+            }}
           >
             <div className="thumbnail" aria-hidden="true">
               {job.thumbnailUrl ? (
@@ -120,31 +161,12 @@ export function JobList({ jobs, locale, messages, onDownload, onPreview, onRetry
             {job.status === 'done' && job.variants.length > 1 ? (
               <div className="variant-results" aria-label={messages.allQualities}>
                 {job.variants.map((variant) => (
-                  <div className="variant-result-item" key={variant.preset} tabIndex={0}>
+                  <div
+                    className="variant-result-item"
+                    key={variant.preset}
+                  >
                     <b>{qualityLabel(variant.preset as QualityPreset, messages)}</b>
                     <small>{formatBytes(variant.blob.size)}</small>
-                    <div className="variant-hover-preview">
-                      <span className="actual-size-badge">1:1</span>
-                      {job.kind === 'video' ? (
-                        variant.outputLabel === 'MP3'
-                          ? <audio src={variant.previewUrl ?? variant.url} controls />
-                          : <video src={variant.previewUrl ?? variant.url} muted playsInline />
-                      ) : isPdfVariant(variant) ? (
-                        <iframe src={`${variant.previewUrl ?? variant.url}#page=1&toolbar=0&navpanes=0`} title={`${qualityLabel(variant.preset as QualityPreset, messages)} PDF`} />
-                      ) : (
-                        <div className="actual-size-viewport">
-                          <img src={variant.previewUrl ?? variant.url} alt={`${job.file.name} ${qualityLabel(variant.preset as QualityPreset, messages)}`} />
-                        </div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onDownload(job, variant)}
-                        aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}
-                        title={messages.download}
-                      >
-                        <DownloadSimple size={13} weight="bold" />
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -180,26 +202,16 @@ export function JobList({ jobs, locale, messages, onDownload, onPreview, onRetry
 
             <div className="job-action">
               {job.status === 'done' ? (
-                <>
+                job.variants.length <= 1 ? (
                   <button
                     type="button"
-                    onClick={() => onPreview(job.id)}
-                    aria-label={`${messages.preview} ${job.file.name}`}
-                    title={messages.preview}
+                    onClick={() => onDownload(job)}
+                    aria-label={`${job.resultPath && window.compreesorDesktop ? messages.reveal : messages.download} ${job.file.name}`}
+                    title={job.resultPath && window.compreesorDesktop ? messages.reveal : messages.download}
                   >
-                    <Eye size={15} weight="bold" />
+                    <DownloadSimple size={15} weight="bold" />
                   </button>
-                  {job.variants.length <= 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => onDownload(job)}
-                      aria-label={`${job.resultPath && window.compreesorDesktop ? messages.reveal : messages.download} ${job.file.name}`}
-                      title={job.resultPath && window.compreesorDesktop ? messages.reveal : messages.download}
-                    >
-                      <DownloadSimple size={15} weight="bold" />
-                    </button>
-                  ) : null}
-                </>
+                ) : null
               ) : null}
               {job.status === 'error' ? (
                 <button type="button" onClick={() => onRetry(job)}>{messages.retry}</button>

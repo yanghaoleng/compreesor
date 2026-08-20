@@ -13,8 +13,8 @@
 
 .app-shell.has-jobs .workspace {
   min-height: 0;
-  display: flex;
-  flex: 1 1 0;
+  display: block;
+  flex: 0 1 auto;
 }
 
 .app-shell.has-jobs .tool-panel {
@@ -498,7 +498,7 @@
   position: relative;
   min-height: 0;
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   flex-direction: column;
   margin-top: 0;
   padding-top: 0;
@@ -1104,19 +1104,29 @@
   background: var(--surface-2);
 }
 
+.job-row.status-done {
+  cursor: pointer;
+}
+
+.job-row.is-selected {
+  background: color-mix(in srgb, var(--surface-2) 72%, var(--blue-soft));
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.job-row:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid color-mix(in srgb, var(--primary) 68%, transparent);
+  outline-offset: -2px;
+}
+
 @keyframes job-row-in {
   from { opacity: 0; transform: translateY(8px) scale(0.993); }
   to { opacity: 1; transform: none; }
 }
 
 .job-row.has-variants {
-  grid-template-columns: 44px minmax(150px, 1fr) minmax(250px, 340px) minmax(74px, auto) auto;
-}
-
-.job-row:has(.variant-result-item:hover),
-.job-row:has(.variant-result-item:focus-within) {
-  position: relative;
-  z-index: 20;
+  grid-template-columns: 44px minmax(150px, 1fr) minmax(300px, 360px) minmax(74px, auto) auto;
 }
 
 .queue-section.is-spacious .job-row {
@@ -1127,7 +1137,7 @@
 }
 
 .queue-section.is-spacious .job-row.has-variants {
-  grid-template-columns: 76px minmax(170px, 1fr) minmax(270px, 360px) minmax(82px, auto) auto;
+  grid-template-columns: 76px minmax(170px, 1fr) minmax(300px, 360px) minmax(82px, auto) auto;
 }
 
 .queue-section.is-spacious .thumbnail {
@@ -1155,28 +1165,17 @@
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 5px;
+  gap: 12px;
 }
 
 .variant-result-item {
-  position: relative;
   min-width: 0;
   display: grid;
   gap: 2px;
-  padding: 6px 7px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2);
-  outline: none;
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms ease, background-color 160ms ease, box-shadow 180ms ease;
-}
-
-.variant-result-item:hover,
-.variant-result-item:focus-within {
-  border-color: color-mix(in srgb, var(--primary) 35%, var(--line));
-  background: color-mix(in srgb, var(--surface-2) 82%, var(--blue-soft));
-  box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 9%, transparent);
-  transform: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .variant-result-item > b,
@@ -1196,95 +1195,6 @@
   color: var(--muted);
   font-size: 8px;
   font-variant-numeric: tabular-nums;
-}
-
-.variant-hover-preview {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  z-index: 30;
-  width: min(684px, calc(100vw - 32px));
-  height: min(468px, 70vh);
-  display: none;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  box-shadow: 0 16px 38px rgba(8, 17, 32, 0.24);
-  transform: translate(-50%, -50%);
-  animation: variant-preview-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.variant-result-item:hover .variant-hover-preview,
-.variant-result-item:focus-within .variant-hover-preview {
-  display: block;
-}
-
-@keyframes variant-preview-in {
-  from { opacity: 0; transform: translate(-50%, calc(-50% + 10px)) scale(0.98); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-.actual-size-viewport {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background:
-    linear-gradient(45deg, color-mix(in srgb, var(--muted) 10%, transparent) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(-45deg, color-mix(in srgb, var(--muted) 10%, transparent) 25%, transparent 25%) 0 6px / 12px 12px,
-    var(--surface-2);
-}
-
-.actual-size-viewport img {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: auto;
-  height: auto;
-  max-width: none;
-  max-height: none;
-  transform: translate(-50%, -50%);
-  image-rendering: auto;
-}
-
-.variant-hover-preview > iframe,
-.variant-hover-preview > video,
-.variant-hover-preview > audio {
-  width: 100%;
-  height: 100%;
-  display: block;
-  border: 0;
-  object-fit: contain;
-  background: var(--surface-2);
-}
-
-.actual-size-badge {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 2;
-  padding: 2px 5px;
-  color: white;
-  border-radius: 5px;
-  background: rgba(10, 17, 29, 0.62);
-  font-size: 8px;
-  font-weight: 850;
-}
-
-.variant-hover-preview > button {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  z-index: 3;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  color: white;
-  border-radius: 7px;
-  background: rgba(10, 17, 29, 0.66);
-  cursor: pointer;
 }
 
 .thumbnail {
@@ -1561,6 +1471,10 @@
   animation: preview-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.result-preview.is-transient {
+  pointer-events: none;
+}
+
 .preview-resize-handle {
   position: absolute;
   top: -6px;
@@ -1779,7 +1693,7 @@
 }
 
 .result-preview.is-resized .image-preview-stage img {
-  max-height: 100%;
+  max-height: none;
 }
 
 .comparison-card > img,
@@ -1798,8 +1712,7 @@
   width: 100%;
   height: min(230px, 34vh);
   overflow: hidden;
-  display: grid;
-  place-items: center;
+  display: block;
   touch-action: none;
   cursor: grab;
   background: var(--surface-2);
@@ -1810,10 +1723,16 @@
 }
 
 .comparison-image-stage img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
   display: block;
-  object-fit: contain;
+  object-fit: none;
+  transform-origin: 0 0;
   user-select: none;
   will-change: transform;
   transition: transform 90ms ease-out;
@@ -1844,19 +1763,37 @@
 
 .image-preview-stage {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: block;
   min-height: 180px;
+  height: min(320px, 46vh);
   max-height: min(320px, 46vh);
-  padding: 12px;
+  overflow: hidden;
   background: var(--surface-2);
 }
 
 .image-preview-stage img {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: block;
-  max-width: 100%;
-  max-height: min(296px, 42vh);
-  object-fit: contain;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  object-fit: none;
+  transform-origin: 0 0;
+  user-select: none;
+  will-change: transform;
+  transition: transform 90ms ease-out;
+}
+
+.image-preview-stage.is-pannable {
+  touch-action: none;
+  cursor: grab;
+}
+
+.image-preview-stage.is-pannable:active {
+  cursor: grabbing;
 }
 
 .preview-page {

@@ -14,21 +14,21 @@ type PreviewPanelProps = {
   job: MediaJob
   jobs: MediaJob[]
   messages: Messages
+  pinned: boolean
   onClose: () => void
   onSelect: (jobId: string) => void
   onDownload: (job: MediaJob, variant?: ResultVariant) => void
 }
 
-export function PreviewPanel({ job, jobs, messages, onClose, onSelect, onDownload }: PreviewPanelProps) {
+export function PreviewPanel({ job, jobs, messages, pinned, onClose, onSelect, onDownload }: PreviewPanelProps) {
   const [height, setHeight] = useState<number | null>(null)
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
   const panelRef = useRef<HTMLElement>(null)
   const resizeRef = useRef<{ pointerId: number; clientY: number; height: number } | null>(null)
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null)
   const index = jobs.findIndex((candidate) => candidate.id === job.id)
-  const supportsSynchronizedView = job.variants.length > 1
-    && (job.kind === 'image' || job.kind === 'gif')
-    && job.variants.every((variant) => !isPdfVariant(variant))
+  const supportsImageView = (job.kind === 'image' || job.kind === 'gif')
+    && (job.variants.length === 0 || job.variants.every((variant) => !isPdfVariant(variant)))
 
   useEffect(() => {
     setView({ scale: 1, x: 0, y: 0 })
@@ -38,12 +38,20 @@ export function PreviewPanel({ job, jobs, messages, onClose, onSelect, onDownloa
   }, [job.id])
 
   useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+    const handlePreviewShortcut = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (event.key !== 'Enter') return
+      const target = event.target
+      if (target instanceof Element && target.closest('button, a, input, select, textarea, [contenteditable="true"]')) return
+      event.preventDefault()
+      void onDownload(job)
     }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+    window.addEventListener('keydown', handlePreviewShortcut)
+    return () => window.removeEventListener('keydown', handlePreviewShortcut)
+  }, [job, onClose, onDownload])
 
   const beginResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
@@ -97,20 +105,20 @@ export function PreviewPanel({ job, jobs, messages, onClose, onSelect, onDownloa
   }, [])
 
   const zoom = useCallback((nextScale: number) => {
-    setView((current) => ({ ...current, scale: Math.max(1, Math.min(5, nextScale)) }))
+    setView((current) => ({ ...current, scale: Math.max(0.25, Math.min(5, nextScale)) }))
   }, [])
 
   const wheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault()
     setView((current) => ({
       ...current,
-      scale: Math.max(1, Math.min(5, current.scale + (event.deltaY < 0 ? 0.25 : -0.25))),
+      scale: Math.max(0.25, Math.min(5, current.scale + (event.deltaY < 0 ? 0.25 : -0.25))),
     }))
   }, [])
 
   return (
     <aside
-      className={`result-preview${job.variants.length > 1 ? ' is-comparison' : ''}${height !== null ? ' is-resized' : ''}`}
+      className={`result-preview${job.variants.length > 1 ? ' is-comparison' : ''}${height !== null ? ' is-resized' : ''}${pinned ? ' is-pinned' : ' is-transient'}`}
       ref={panelRef}
       style={height !== null ? { height: `${height}px` } : undefined}
       aria-label={`${messages.preview} ${job.file.name}`}
@@ -134,7 +142,7 @@ export function PreviewPanel({ job, jobs, messages, onClose, onSelect, onDownloa
           <X size={16} weight="bold" />
         </button>
       </header>
-      {supportsSynchronizedView ? (
+      {supportsImageView ? (
         <div className="comparison-toolbar">
           <span>{messages.dragZoomHint}</span>
           <div>
@@ -194,8 +202,20 @@ export function PreviewPanel({ job, jobs, messages, onClose, onSelect, onDownloa
       ) : job.kind === 'pdf' || job.outputLabel === 'PDF' ? (
         <iframe className="pdf-preview-frame" src={`${job.resultUrl}#page=1&toolbar=0&navpanes=0`} title={job.file.name} />
       ) : (
-        <div className="image-preview-stage">
-          <img src={job.resultUrl ?? undefined} alt={job.file.name} />
+        <div
+          className="image-preview-stage is-pannable"
+          onPointerDown={beginDrag}
+          onPointerMove={moveDrag}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          onWheel={wheel}
+        >
+          <img
+            src={job.resultUrl ?? undefined}
+            alt={job.file.name}
+            draggable={false}
+            style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})` }}
+          />
           {jobs.length > 1 ? (
             <>
               <button

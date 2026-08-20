@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 
+import { scaledImageDimensions } from '@compreesor/core'
 import type {
   CompressionPreset,
   CompressionVariantSettings,
@@ -83,6 +84,7 @@ async function decode(buffer: ArrayBuffer, format: ImageFormat): Promise<ImageDa
 async function resizeImage(image: ImageData, width: number, height: number) {
   if (image.width === width && image.height === height) return image
   const { default: resize } = await import('@jsquash/resize')
+  // @jsquash 的 contain 会裁剪原图；这里只传入等比尺寸，用 stretch 保留全部像素。
   return resize(image, {
     width,
     height,
@@ -96,11 +98,8 @@ async function resizeImage(image: ImageData, width: number, height: number) {
 async function constrainDimensions(image: ImageData, maxDimension: number) {
   if (!maxDimension || Math.max(image.width, image.height) <= maxDimension) return image
   const scale = maxDimension / Math.max(image.width, image.height)
-  return resizeImage(
-    image,
-    Math.max(1, Math.round(image.width * scale)),
-    Math.max(1, Math.round(image.height * scale)),
-  )
+  const dimensions = scaledImageDimensions(image.width, image.height, scale)
+  return resizeImage(image, dimensions.width, dimensions.height)
 }
 
 function flattenTransparency(image: ImageData) {
@@ -231,8 +230,7 @@ async function encodeToTarget(
     if (!smallest || Math.min(working.width, working.height) <= 96) break
     const idealScale = Math.sqrt(targetBytes / Math.max(1, smallest.buffer.byteLength)) * 0.94
     const scale = Math.max(0.42, Math.min(0.88, idealScale))
-    const width = Math.max(96, Math.round(working.width * scale))
-    const height = Math.max(96, Math.round(working.height * scale))
+    const { width, height } = scaledImageDimensions(working.width, working.height, scale, 96)
     reportProgress(58 + scaleAttempt * 10, `调整尺寸至 ${width} × ${height}`)
     working = await resizeImage(working, width, height)
   }

@@ -161,7 +161,8 @@ function App() {
   const [usageGuideOpen, setUsageGuideOpen] = useState(false)
   const [cliGuideOpen, setCliGuideOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
-  const [previewJobId, setPreviewJobId] = useState<string | null>(null)
+  const [hoveredPreviewJobId, setHoveredPreviewJobId] = useState<string | null>(null)
+  const [pinnedPreviewJobId, setPinnedPreviewJobId] = useState<string | null>(null)
   const [reprocessVisible, setReprocessVisible] = useState(false)
   const [reprocessReady, setReprocessReady] = useState(false)
   const [compressionPreset, setCompressionPreset] = useState<CompressionSelection>('all')
@@ -741,7 +742,8 @@ function App() {
         queueRef.current = [...nextJobs]
         jobsRef.current = nextJobs
         dispatchJobs({ type: 'replace-all', jobs: nextJobs })
-        setPreviewJobId(null)
+        setHoveredPreviewJobId(null)
+        setPinnedPreviewJobId(null)
       } else {
         jobsRef.current = [...jobsRef.current, ...nextJobs]
         dispatchJobs({ type: 'append', jobs: nextJobs })
@@ -791,11 +793,27 @@ function App() {
     () => jobs.filter((job) => job.status === 'done' && job.resultUrl),
     [jobs],
   )
-  const previewJob = previewableJobs.find((job) => job.id === previewJobId) ?? null
+  const activePreviewJobId = pinnedPreviewJobId ?? hoveredPreviewJobId
+  const previewJob = previewableJobs.find((job) => job.id === activePreviewJobId) ?? null
+
+  const pinPreview = useCallback((jobId: string) => {
+    setPinnedPreviewJobId(jobId)
+    setHoveredPreviewJobId(null)
+  }, [])
+
+  const closePreview = useCallback(() => {
+    setHoveredPreviewJobId(null)
+    setPinnedPreviewJobId(null)
+  }, [])
 
   useEffect(() => {
-    if (previewJobId && !previewableJobs.some((job) => job.id === previewJobId)) setPreviewJobId(null)
-  }, [previewJobId, previewableJobs])
+    if (hoveredPreviewJobId && !previewableJobs.some((job) => job.id === hoveredPreviewJobId)) {
+      setHoveredPreviewJobId(null)
+    }
+    if (pinnedPreviewJobId && !previewableJobs.some((job) => job.id === pinnedPreviewJobId)) {
+      setPinnedPreviewJobId(null)
+    }
+  }, [hoveredPreviewJobId, pinnedPreviewJobId, previewableJobs])
   const isProcessing = jobs.some((job) => job.status === 'queued' || job.status === 'processing')
   const originalTotal = completedJobs.reduce((sum, job) => sum + job.file.size, 0)
   const resultTotal = completedJobs.reduce((sum, job) => sum + (job.resultBlob?.size ?? 0), 0)
@@ -1068,7 +1086,9 @@ function App() {
                 locale={locale}
                 messages={messages}
                 onDownload={downloadJob}
-                onPreview={setPreviewJobId}
+                selectedJobId={activePreviewJobId}
+                onPreviewHover={setHoveredPreviewJobId}
+                onPreviewPin={pinPreview}
                 onRetry={retryJob}
               />
             </section>
@@ -1097,8 +1117,9 @@ function App() {
           job={previewJob}
           jobs={previewableJobs}
           messages={messages}
-          onClose={() => setPreviewJobId(null)}
-          onSelect={setPreviewJobId}
+          pinned={pinnedPreviewJobId === previewJob.id}
+          onClose={closePreview}
+          onSelect={pinPreview}
           onDownload={downloadJob}
         />
       ) : null}
