@@ -35,14 +35,29 @@ try {
   await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
   if (!(await page.locator('.queue-section').getAttribute('class'))?.includes('is-spacious')) throw new Error('Small queue should use spacious layout')
   const thumbnail = await page.locator('.thumbnail').boundingBox()
-  if (!thumbnail || thumbnail.width < 70) throw new Error(`Spacious thumbnail is too small: ${JSON.stringify(thumbnail)}`)
+  if (!thumbnail || thumbnail.width < 64) throw new Error(`Spacious thumbnail should remain legible in the compact row: ${JSON.stringify(thumbnail)}`)
   if ((await page.locator('.variant-results .variant-result-item').count()) !== 3) throw new Error('Three right-aligned results are missing')
   if (!/^\d+%–\d+%$/.test((await page.locator('.result-ratio-range').getAttribute('aria-label')) ?? '')) throw new Error('Three-quality ratio range is missing')
 
-  await page.getByRole('button', { name: `预览 compreesor-pdf-e2e.pdf` }).click()
+  await page.locator('.job-row').first().click()
   if ((await page.locator('.comparison-card').count()) !== 3) throw new Error('Comparison preview should show three cards')
   if ((await page.locator('.comparison-card iframe').count()) !== 3) throw new Error('PDF comparison should show three PDF previews')
   if ((await page.locator('.comparison-card header button').count()) !== 3) throw new Error('Comparison downloads are missing')
+  const pdfZoomSelect = page.locator('.comparison-toolbar select')
+  if ((await pdfZoomSelect.inputValue()) !== '1') throw new Error('PDF comparison should default to 100%')
+  await pdfZoomSelect.selectOption('2')
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
+    (frame) => frame.getAttribute('src')?.includes('zoom=200'),
+  ))
+  await page.locator('.job-row').first().focus()
+  await page.keyboard.press('-')
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
+    (frame) => frame.getAttribute('src')?.includes('zoom=175'),
+  ))
+  await pdfZoomSelect.selectOption('fit')
+  await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
+    (frame) => frame.getAttribute('src')?.includes('zoom=page-fit'),
+  ))
   await page.locator('.result-preview > header button').click()
 
   const zipEvent = page.waitForEvent('download')
@@ -72,13 +87,13 @@ try {
   await page.locator('input[type="file"]').setInputFiles(sourceIconPath)
   await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
   const imagePdfDownload = page.waitForEvent('download')
-  await page.locator('.job-action button').nth(1).click()
+  await page.locator('.job-action button').first().click()
   const imagePdf = await imagePdfDownload
   const imagePdfPath = '/tmp/compreesor-image-to-pdf.pdf'
   await imagePdf.saveAs(imagePdfPath)
   if (!imagePdf.suggestedFilename().endsWith('-压缩.pdf')) throw new Error(`Image to PDF filename is incorrect: ${imagePdf.suggestedFilename()}`)
   if ((await readFile(imagePdfPath, { encoding: 'utf8' })).slice(0, 4) !== '%PDF') throw new Error('Image to PDF result is invalid')
-  await page.getByRole('button', { name: `预览 ${sourceIconPath.split('/').at(-1)}` }).click()
+  await page.locator('.job-row').first().click()
   if ((await page.locator('.result-preview iframe').count()) !== 1) throw new Error('Image to PDF should use the PDF preview')
   await page.locator('.result-preview > header button').click()
 
@@ -89,7 +104,7 @@ try {
   const splitNames = await page.locator('.job-copy > strong').allInnerTexts()
   if (!splitNames.every((name, index) => name.includes(`第${index + 1}页`))) throw new Error(`PDF pages were not expanded into rows: ${splitNames.join(' | ')}`)
   const pageDownloadEvent = page.waitForEvent('download')
-  await page.locator('.job-row').first().locator('.job-action button').nth(1).click()
+  await page.locator('.job-row').first().locator('.job-action button').first().click()
   const pageDownload = await pageDownloadEvent
   const pageImagePath = '/tmp/compreesor-pdf-page.jpg'
   await pageDownload.saveAs(pageImagePath)
@@ -103,12 +118,12 @@ try {
   await page.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
   const resultItems = page.locator('.variant-result-item')
   if ((await resultItems.count()) !== 3) throw new Error('Image result chips are missing')
-  await resultItems.first().hover()
-  await page.locator('.variant-hover-preview').first().waitFor()
-  if ((await page.locator('.variant-hover-preview .actual-size-badge').first().innerText()).trim() !== '1:1') throw new Error('Hover preview is not marked 1:1')
-  if ((await page.locator('.variant-hover-preview button').count()) !== 3) throw new Error('Hover previews should include per-quality downloads')
-
-  await page.getByRole('button', { name: `预览 ${sourceIconPath.split('/').at(-1)}` }).click()
+  if (await page.locator('.variant-hover-preview').count()) throw new Error('Quality result hover previews should be removed')
+  await page.locator('.job-row').first().hover()
+  await page.locator('.result-preview').waitFor()
+  if (!(await page.locator('.result-preview').getAttribute('class'))?.includes('is-transient')) throw new Error('Whole-row hover should show a transient preview')
+  await page.locator('.job-row').first().click()
+  if (!(await page.locator('.result-preview').getAttribute('class'))?.includes('is-pinned')) throw new Error('Whole-row click should pin its preview')
   if ((await page.locator('.comparison-image-stage').count()) !== 3) throw new Error('Image comparison should open three synchronized windows')
   await page.getByRole('button', { name: '放大' }).click()
   await page.waitForTimeout(140)

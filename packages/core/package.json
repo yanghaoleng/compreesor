@@ -1,0 +1,20 @@
+{
+  "name": "@compreesor/core",
+  "version": "1.0.0",
+  "description": "Shared compression policies and file-domain helpers for Compreesor.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "license": "MIT"
+}

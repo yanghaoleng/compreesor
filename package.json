@@ -12,12 +12,14 @@
     "lint": "oxlint src tests scripts vite.config.ts",
     "preview": "vite preview",
     "cli:test": "npm --prefix packages/cli test",
+    "core:test": "npm --prefix packages/core test",
     "desktop:dev": "npm --prefix apps/desktop start",
     "desktop:dist": "npm --prefix apps/desktop run dist",
     "e2e:pdf": "node tests/pdf-e2e.mjs",
     "e2e:electron": "node tests/electron-e2e.mjs"
   },
   "dependencies": {
+    "@compreesor/core": "file:packages/core",
     "@ffmpeg/core": "^0.12.10",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",

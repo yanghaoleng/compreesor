@@ -20,6 +20,12 @@ type TargetVideoProfile = {
   audioBitrate: string
 }
 
+type MediaSession = {
+  engine: FFmpeg
+  inputName: string
+  outputNames: Set<string>
+}
+
 let ffmpegInstance: FFmpeg | null = null
 let ffmpegLoading: Promise<FFmpeg> | null = null
 
@@ -29,12 +35,11 @@ async function getMediaEngine(onProgress: ProgressReporter) {
     ffmpegLoading = (async () => {
       onProgress(3, '正在准备视频引擎')
       const { FFmpeg } = await import('@ffmpeg/ffmpeg')
-      const { toBlobURL } = await import('@ffmpeg/util')
       const instance = new FFmpeg()
       const baseUrl = `${import.meta.env.BASE_URL}ffmpeg`
       await instance.load({
-        coreURL: await toBlobURL(`${baseUrl}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseUrl}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: `${baseUrl}/ffmpeg-core.js`,
+        wasmURL: `${baseUrl}/ffmpeg-core.wasm`,
       })
       ffmpegInstance = instance
       return instance
@@ -44,6 +49,10 @@ async function getMediaEngine(onProgress: ProgressReporter) {
     })
   }
   return ffmpegLoading
+}
+
+export function preloadMediaEngine(onProgress: ProgressReporter = () => undefined) {
+  return getMediaEngine(onProgress).then(() => undefined)
 }
 
 function safeExtension(file: File) {
@@ -113,45 +122,56 @@ function targetMp3Bitrate(targetBytes: number, duration: number) {
   return `${candidates.find((value) => value <= ideal) ?? 32}k`
 }
 
-async function transcode(
-  file: File,
+async function prepareMediaSession(file: File, jobId: string, onProgress: ProgressReporter): Promise<MediaSession> {
+  const engine = await getMediaEngine(onProgress)
+  const inputName = `input-${jobId}.${safeExtension(file)}`
+  onProgress(8, '正在读取文件')
+  await engine.writeFile(inputName, new Uint8Array(await file.arrayBuffer()))
+  return { engine, inputName, outputNames: new Set() }
+}
+
+async function closeMediaSession(session: MediaSession) {
+  await Promise.all([
+    session.engine.deleteFile(session.inputName).catch(() => false),
+    ...Array.from(session.outputNames, (outputName) => session.engine.deleteFile(outputName).catch(() => false)),
+  ])
+}
+
+async function transcodePrepared(
+  session: MediaSession,
   jobId: string,
+  variantId: string,
   outputExtension: string,
   stage: string,
   command: (inputName: string, outputName: string) => string[],
   onProgress: ProgressReporter,
 ) {
-  const ffmpeg = await getMediaEngine(onProgress)
-  const inputName = `input-${jobId}.${safeExtension(file)}`
-  const outputName = `output-${jobId}.${outputExtension}`
+  const outputName = `output-${jobId}-${variantId}.${outputExtension}`
+  session.outputNames.add(outputName)
   let lastLog = ''
-
   const handleProgress = ({ progress }: { progress: number }) => {
-    if (!Number.isFinite(progress)) return
-    onProgress(12 + Math.max(0, Math.min(1, progress)) * 84, stage)
+    if (Number.isFinite(progress)) onProgress(12 + Math.max(0, Math.min(1, progress)) * 84, stage)
   }
   const handleLog = ({ message }: { message: string }) => {
     if (message.trim()) lastLog = message.trim()
   }
 
-  ffmpeg.on('progress', handleProgress)
-  ffmpeg.on('log', handleLog)
+  session.engine.on('progress', handleProgress)
+  session.engine.on('log', handleLog)
   try {
-    onProgress(8, '正在读取文件')
-    await ffmpeg.writeFile(inputName, new Uint8Array(await file.arrayBuffer()))
-    const exitCode = await ffmpeg.exec(command(inputName, outputName))
+    const exitCode = await session.engine.exec(command(session.inputName, outputName))
     if (exitCode !== 0) throw new Error(lastLog || '转码失败')
     onProgress(97, '正在生成下载文件')
-    const output = await ffmpeg.readFile(outputName)
+    const output = await session.engine.readFile(outputName)
     return new Blob([fileData(output)], { type: mimeType(outputExtension) })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error ?? '转码失败')
     throw new Error(message.includes('memory') ? '文件较大，浏览器内存不足' : message)
   } finally {
-    ffmpeg.off('progress', handleProgress)
-    ffmpeg.off('log', handleLog)
-    await ffmpeg.deleteFile(inputName).catch(() => false)
-    await ffmpeg.deleteFile(outputName).catch(() => false)
+    session.engine.off('progress', handleProgress)
+    session.engine.off('log', handleLog)
+    await session.engine.deleteFile(outputName).catch(() => false)
+    session.outputNames.delete(outputName)
   }
 }
 
@@ -231,19 +251,10 @@ function videoCommand(
   ]
 }
 
-export function compressGif(
-  file: File,
-  jobId: string,
-  preset: CompressionPreset,
-  onProgress: ProgressReporter,
-) {
+function gifProfile(preset: CompressionPreset) {
   const targetBytes = targetBytesForPreset(preset)
-  if (targetBytes && file.size <= targetBytes) {
-    onProgress(100, '原文件已满足目标体积')
-    return Promise.resolve(file as Blob)
-  }
   const baseGif = MEDIA_PRESET_SETTINGS[qualityPresetFor(preset)].gif
-  const gif = targetBytes
+  return targetBytes
     ? targetBytes <= 100 * 1024
       ? { fps: 6, maxDimension: 320, maxColors: 32, dither: 'none' as const }
       : targetBytes <= 500 * 1024
@@ -252,29 +263,133 @@ export function compressGif(
           ? { fps: 10, maxDimension: 720, maxColors: 96, dither: 'bayer' as const }
           : { fps: 12, maxDimension: 960, maxColors: 128, dither: 'bayer' as const }
     : baseGif
-  if ('copy' in gif) {
-    onProgress(100, '已保留原始 GIF')
-    return Promise.resolve(file as Blob)
-  }
+}
+
+function gifCommand(
+  gif: Exclude<ReturnType<typeof gifProfile>, { copy: true }>,
+  inputName: string,
+  outputName: string,
+) {
   const paletteUse = gif.dither === 'bayer'
     ? 'paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle'
     : 'paletteuse=dither=none:diff_mode=rectangle'
-  return transcode(
-    file,
+  return [
+    '-i', inputName,
+    '-filter_complex',
+    `[0:v]fps=${gif.fps},scale=min(${gif.maxDimension}\\,iw):min(${gif.maxDimension}\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=${gif.maxColors}:stats_mode=diff[p];[s1][p]${paletteUse}`,
+    '-loop', '0', outputName,
+  ]
+}
+
+async function compressGifPrepared(
+  file: File,
+  session: MediaSession,
+  jobId: string,
+  variantId: string,
+  preset: CompressionPreset,
+  onProgress: ProgressReporter,
+) {
+  const targetBytes = targetBytesForPreset(preset)
+  if (targetBytes && file.size <= targetBytes) {
+    onProgress(100, '原文件已满足目标体积')
+    return file as Blob
+  }
+  const gif = gifProfile(preset)
+  if ('copy' in gif) {
+    onProgress(100, '已保留原始 GIF')
+    return file as Blob
+  }
+  return transcodePrepared(
+    session,
     jobId,
+    variantId,
     'gif',
     '正在压缩 GIF',
-    (inputName, outputName) => [
-      '-i',
-      inputName,
-      '-filter_complex',
-      `[0:v]fps=${gif.fps},scale=min(${gif.maxDimension}\\,iw):min(${gif.maxDimension}\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=${gif.maxColors}:stats_mode=diff[p];[s1][p]${paletteUse}`,
-      '-loop',
-      '0',
-      outputName,
-    ],
+    (inputName, outputName) => gifCommand(gif, inputName, outputName),
     onProgress,
   )
+}
+
+async function compressVideoPrepared(
+  file: File,
+  session: MediaSession,
+  jobId: string,
+  variantId: string,
+  preference: VideoOutputPreference,
+  preset: CompressionPreset,
+  duration: number,
+  onProgress: ProgressReporter,
+): Promise<MediaOutput> {
+  const targetBytes = targetBytesForPreset(preset)
+  if (targetBytes && file.size <= targetBytes && preference === 'original') {
+    onProgress(100, '原文件已满足目标体积')
+    return { blob: file, ...resolveOriginalVideoOutput(file) }
+  }
+  const qualityPreset = qualityPresetFor(preset)
+  if (preference === 'mp3') {
+    const bitrate = targetBytes
+      ? targetMp3Bitrate(targetBytes, duration)
+      : MEDIA_PRESET_SETTINGS[qualityPreset].mp3Bitrate
+    const blob = await transcodePrepared(
+      session,
+      jobId,
+      variantId,
+      'mp3',
+      '正在提取 MP3 音频',
+      (inputName, outputName) => [
+        '-i', inputName, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', bitrate, outputName,
+      ],
+      onProgress,
+    )
+    return { blob, extension: 'mp3', label: 'MP3' }
+  }
+  if (qualityPreset === 'lossless' && preference === 'original') {
+    onProgress(100, '已保留原始视频')
+    return { blob: file, ...resolveOriginalVideoOutput(file) }
+  }
+
+  const preserveAlpha = preference === 'mov-alpha'
+  const output = preserveAlpha
+    ? { extension: 'mov', label: 'MOV · Alpha' }
+    : preference === 'original'
+      ? resolveOriginalVideoOutput(file)
+      : { extension: preference, label: preference.toUpperCase() }
+  const blob = await transcodePrepared(
+    session,
+    jobId,
+    variantId,
+    output.extension,
+    '正在压缩视频',
+    (inputName, outputName) => videoCommand(
+      output.extension,
+      preserveAlpha,
+      preset,
+      inputName,
+      outputName,
+      targetBytes && !preserveAlpha ? targetVideoProfile(targetBytes, duration) : undefined,
+    ),
+    onProgress,
+  )
+  return { blob, ...output }
+}
+
+export async function compressGif(
+  file: File,
+  jobId: string,
+  preset: CompressionPreset,
+  onProgress: ProgressReporter,
+) {
+  const targetBytes = targetBytesForPreset(preset)
+  if ((targetBytes && file.size <= targetBytes) || 'copy' in gifProfile(preset)) {
+    onProgress(100, targetBytes && file.size <= targetBytes ? '原文件已满足目标体积' : '已保留原始 GIF')
+    return file as Blob
+  }
+  const session = await prepareMediaSession(file, jobId, onProgress)
+  try {
+    return await compressGifPrepared(file, session, jobId, 'single', preset, onProgress)
+  } finally {
+    await closeMediaSession(session)
+  }
 }
 
 export async function compressVideo(
@@ -290,51 +405,66 @@ export async function compressVideo(
     return { blob: file, ...resolveOriginalVideoOutput(file) }
   }
   const qualityPreset = qualityPresetFor(preset)
-  const duration = targetBytes ? await mediaDuration(file) : 1
-  if (preference === 'mp3') {
-    const bitrate = targetBytes
-      ? targetMp3Bitrate(targetBytes, duration)
-      : MEDIA_PRESET_SETTINGS[qualityPreset].mp3Bitrate
-    const blob = await transcode(
-      file,
-      jobId,
-      'mp3',
-      '正在提取 MP3 音频',
-      (inputName, outputName) => [
-        '-i', inputName, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', bitrate, outputName,
-      ],
-      onProgress,
-    )
-    return { blob, extension: 'mp3', label: 'MP3' }
-  }
-
   if (qualityPreset === 'lossless' && preference === 'original') {
     onProgress(100, '已保留原始视频')
     return { blob: file, ...resolveOriginalVideoOutput(file) }
   }
+  const duration = targetBytes ? await mediaDuration(file) : 1
+  const session = await prepareMediaSession(file, jobId, onProgress)
+  try {
+    return await compressVideoPrepared(file, session, jobId, 'single', preference, preset, duration, onProgress)
+  } finally {
+    await closeMediaSession(session)
+  }
+}
 
-  const preserveAlpha = preference === 'mov-alpha'
-  const output = preserveAlpha
-    ? { extension: 'mov', label: 'MOV · Alpha' }
-    : preference === 'original'
-      ? resolveOriginalVideoOutput(file)
-      : { extension: preference, label: preference.toUpperCase() }
-  const blob = await transcode(
-    file,
-    jobId,
-    output.extension,
-    '正在压缩视频',
-    (inputName, outputName) => videoCommand(
-      output.extension,
-      preserveAlpha,
-      preset,
-      inputName,
-      outputName,
-      targetBytes && !preserveAlpha ? targetVideoProfile(targetBytes, duration) : undefined,
-    ),
-    onProgress,
-  )
-  return { blob, ...output }
+export async function compressMediaVariants(
+  file: File,
+  jobId: string,
+  kind: 'gif' | 'video',
+  preference: VideoOutputPreference,
+  presets: CompressionPreset[],
+  onProgress: (preset: CompressionPreset, progress: number, stage: string) => void,
+) {
+  const duration = kind === 'video' && presets.some((preset) => targetBytesForPreset(preset))
+    ? await mediaDuration(file)
+    : 1
+  const session = await prepareMediaSession(file, jobId, (progress, stage) => {
+    presets.forEach((preset) => onProgress(preset, progress, stage))
+  })
+  try {
+    const outputs: Array<{ preset: CompressionPreset; output: MediaOutput }> = []
+    for (const preset of presets) {
+      if (kind === 'gif') {
+        const blob = await compressGifPrepared(
+          file,
+          session,
+          jobId,
+          preset,
+          preset,
+          (progress, stage) => onProgress(preset, progress, stage),
+        )
+        outputs.push({ preset, output: { blob, extension: 'gif', label: 'GIF' } })
+      } else {
+        outputs.push({
+          preset,
+          output: await compressVideoPrepared(
+            file,
+            session,
+            jobId,
+            preset,
+            preference,
+            preset,
+            duration,
+            (progress, stage) => onProgress(preset, progress, stage),
+          ),
+        })
+      }
+    }
+    return outputs
+  } finally {
+    await closeMediaSession(session)
+  }
 }
 
 export function disposeMediaEngine() {

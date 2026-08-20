@@ -2,7 +2,7 @@ import { PDFDocument } from 'pdf-lib'
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { targetBytesForPreset } from './compressionPresets'
-import type { CompressionPreset } from './types'
+import type { CompressionPreset, QualityPreset } from './types'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -82,6 +82,87 @@ async function rasterizePdf(
       onProgress(8 + (completed / maxAttempts) * 82, `正在压缩 PDF · 第 ${pageNumber}/${input.numPages} 页`)
     }
     return safeBytes(await output.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 30 }))
+  } finally {
+    await loadingTask.destroy()
+  }
+}
+
+async function rasterizePdfVariants(
+  source: Uint8Array,
+  presets: Array<{ preset: QualityPreset; profile: PdfProfile }>,
+  onProgress: (preset: QualityPreset, progress: number, stage: string) => void,
+) {
+  const loadingTask = getDocument({ data: source.slice() })
+  const input = await loadingTask.promise
+  const outputs = new Map<QualityPreset, PDFDocument>()
+  for (const { preset } of presets) outputs.set(preset, await PDFDocument.create())
+  const maxDpi = Math.max(...presets.map(({ profile }) => profile.dpi))
+
+  try {
+    for (let pageNumber = 1; pageNumber <= input.numPages; pageNumber += 1) {
+      const page = await input.getPage(pageNumber)
+      const baseViewport = page.getViewport({ scale: 1 })
+      const renderViewport = page.getViewport({ scale: maxDpi / 72 })
+      const renderCanvas = document.createElement('canvas')
+      renderCanvas.width = Math.max(1, Math.round(renderViewport.width))
+      renderCanvas.height = Math.max(1, Math.round(renderViewport.height))
+      const renderContext = renderCanvas.getContext('2d', { alpha: false })
+      if (!renderContext) throw new Error('浏览器无法创建 PDF 画布')
+      renderContext.fillStyle = '#ffffff'
+      renderContext.fillRect(0, 0, renderCanvas.width, renderCanvas.height)
+      await page.render({
+        canvas: renderCanvas,
+        canvasContext: renderContext,
+        viewport: renderViewport,
+        background: '#ffffff',
+      }).promise
+
+      for (let index = 0; index < presets.length; index += 1) {
+        const { preset, profile } = presets[index]
+        const scale = profile.dpi / maxDpi
+        const outputCanvas = scale === 1 ? renderCanvas : document.createElement('canvas')
+        if (outputCanvas !== renderCanvas) {
+          outputCanvas.width = Math.max(1, Math.round(renderCanvas.width * scale))
+          outputCanvas.height = Math.max(1, Math.round(renderCanvas.height * scale))
+          const outputContext = outputCanvas.getContext('2d', { alpha: false })
+          if (!outputContext) throw new Error('浏览器无法创建 PDF 缩放画布')
+          outputContext.fillStyle = '#ffffff'
+          outputContext.fillRect(0, 0, outputCanvas.width, outputCanvas.height)
+          outputContext.drawImage(renderCanvas, 0, 0, outputCanvas.width, outputCanvas.height)
+        }
+        const jpeg = await canvasBlob(outputCanvas, 'image/jpeg', profile.quality)
+        const output = outputs.get(preset)!
+        const embedded = await output.embedJpg(await jpeg.arrayBuffer())
+        const outputPage = output.addPage([baseViewport.width, baseViewport.height])
+        outputPage.drawImage(embedded, {
+          x: 0,
+          y: 0,
+          width: baseViewport.width,
+          height: baseViewport.height,
+        })
+        if (outputCanvas !== renderCanvas) {
+          outputCanvas.width = 1
+          outputCanvas.height = 1
+        }
+        const completed = (pageNumber - 1) * presets.length + index + 1
+        const total = input.numPages * presets.length
+        onProgress(preset, 8 + (completed / total) * 82, `正在压缩 PDF · 第 ${pageNumber}/${input.numPages} 页`)
+      }
+
+      renderCanvas.width = 1
+      renderCanvas.height = 1
+      page.cleanup()
+    }
+
+    const saved = new Map<QualityPreset, Uint8Array>()
+    await Promise.all(Array.from(outputs, async ([preset, output]) => {
+      saved.set(preset, safeBytes(await output.save({
+        useObjectStreams: true,
+        addDefaultPage: false,
+        objectsPerTick: 30,
+      })))
+    }))
+    return saved
   } finally {
     await loadingTask.destroy()
   }
@@ -210,4 +291,39 @@ export async function compressPdf(
   return smallest.byteLength < file.size
     ? new Blob([smallest.buffer as ArrayBuffer], { type: 'application/pdf' })
     : file as Blob
+}
+
+export async function compressPdfVariants(
+  file: File,
+  presets: QualityPreset[],
+  onProgress: (preset: QualityPreset, progress: number, stage: string) => void,
+) {
+  const source = new Uint8Array(await file.arrayBuffer())
+  const outputs = new Map<QualityPreset, Blob>()
+  const rasterPresets = presets
+    .filter((preset) => preset !== 'lossless')
+    .map((preset) => ({ preset, profile: PDF_PROFILES[preset]! }))
+
+  if (rasterPresets.length > 0) {
+    const rasterized = await rasterizePdfVariants(source, rasterPresets, onProgress)
+    rasterized.forEach((bytes, preset) => {
+      outputs.set(
+        preset,
+        bytes.byteLength < file.size ? new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }) : file,
+      )
+      onProgress(preset, 100, 'PDF 压缩完成')
+    })
+  }
+
+  if (presets.includes('lossless')) {
+    onProgress('lossless', 20, '正在整理 PDF 结构')
+    const structured = await saveStructureOnly(source)
+    outputs.set(
+      'lossless',
+      structured.byteLength < file.size ? new Blob([structured.buffer], { type: 'application/pdf' }) : file,
+    )
+    onProgress('lossless', 100, 'PDF 无损整理完成')
+  }
+
+  return presets.map((preset) => ({ preset, blob: outputs.get(preset) ?? file }))
 }

@@ -11,25 +11,29 @@ export type CompressionSettings = {
   maxDimension: number
 }
 
+export type CompressionVariantSettings = CompressionSettings & {
+  variantId: string
+}
+
 export type WorkerRequest = {
   type: 'compress'
   jobId: string
   buffer: ArrayBuffer
   fileName: string
   mimeType: string
-  settings: CompressionSettings
+  variants: CompressionVariantSettings[]
 }
 
 export type WorkerProgress = {
   type: 'progress'
   jobId: string
+  variantId: string
   progress: number
   stage: string
 }
 
-export type WorkerSuccess = {
-  type: 'result'
-  jobId: string
+export type WorkerResult = {
+  variantId: string
   outputBuffer: ArrayBuffer
   previewBuffer: ArrayBuffer | null
   outputFormat: ImageFormat
@@ -37,6 +41,12 @@ export type WorkerSuccess = {
   width: number
   height: number
   qualityUsed: number | null
+}
+
+export type WorkerSuccess = {
+  type: 'result'
+  jobId: string
+  results: WorkerResult[]
 }
 
 export type WorkerFailure = {

@@ -1,10 +1,13 @@
 /// <reference lib="webworker" />
 
+import { scaledImageDimensions } from '@compreesor/core'
 import type {
   CompressionPreset,
+  CompressionVariantSettings,
   ImageFormat,
   WorkerRequest,
   WorkerResponse,
+  WorkerResult,
 } from './types'
 
 type EncodedResult = {
@@ -12,6 +15,8 @@ type EncodedResult = {
   image: ImageData
   quality: number | null
 }
+
+type ProgressReporter = (progress: number, stage: string) => void
 
 const MIME_TYPES: Record<ImageFormat, string> = {
   jpeg: 'image/jpeg',
@@ -25,8 +30,8 @@ function send(message: WorkerResponse, transfers: Transferable[] = []) {
   self.postMessage(message, { transfer: transfers })
 }
 
-function report(jobId: string, progress: number, stage: string) {
-  send({ type: 'progress', jobId, progress, stage })
+function report(jobId: string, variantId: string, progress: number, stage: string) {
+  send({ type: 'progress', jobId, variantId, progress, stage })
 }
 
 function detectFormat(buffer: ArrayBuffer, fileName: string, mimeType: string): ImageFormat {
@@ -38,13 +43,7 @@ function detectFormat(buffer: ArrayBuffer, fileName: string, mimeType: string): 
   if (bytes[0] === 0x89 && ascii.slice(1, 4) === 'PNG') return 'png'
   if (ascii.slice(0, 4) === 'RIFF' && ascii.slice(8, 12) === 'WEBP') return 'webp'
   if (ascii.includes('ftypavif') || ascii.includes('ftypavis')) return 'avif'
-  if (
-    (bytes[0] === 0xff && bytes[1] === 0x0a) ||
-    ascii.includes('JXL ') ||
-    lowerName.endsWith('.jxl')
-  ) {
-    return 'jxl'
-  }
+  if ((bytes[0] === 0xff && bytes[1] === 0x0a) || ascii.includes('JXL ') || lowerName.endsWith('.jxl')) return 'jxl'
   if (mimeType.includes('jpeg') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return 'jpeg'
   if (mimeType.includes('png') || lowerName.endsWith('.png')) return 'png'
   if (mimeType.includes('webp') || lowerName.endsWith('.webp')) return 'webp'
@@ -61,9 +60,7 @@ async function decode(buffer: ArrayBuffer, format: ImageFormat): Promise<ImageDa
     case 'png': {
       const { decode: decodePng } = await import('@jsquash/png')
       const decoded = await decodePng(buffer)
-      if (!(decoded.data instanceof Uint8ClampedArray)) {
-        throw new Error('暂不支持 16 位 PNG')
-      }
+      if (!(decoded.data instanceof Uint8ClampedArray)) throw new Error('暂不支持 16 位 PNG')
       return decoded
     }
     case 'webp': {
@@ -74,9 +71,7 @@ async function decode(buffer: ArrayBuffer, format: ImageFormat): Promise<ImageDa
       const { decode: decodeAvif } = await import('@jsquash/avif')
       const decoded = await decodeAvif(buffer)
       if (!decoded) throw new Error('AVIF 解码失败')
-      if (!(decoded.data instanceof Uint8ClampedArray)) {
-        throw new Error('暂不支持高于 8 位的 AVIF 输入')
-      }
+      if (!(decoded.data instanceof Uint8ClampedArray)) throw new Error('暂不支持高于 8 位的 AVIF 输入')
       return decoded
     }
     case 'jxl': {
@@ -89,6 +84,7 @@ async function decode(buffer: ArrayBuffer, format: ImageFormat): Promise<ImageDa
 async function resizeImage(image: ImageData, width: number, height: number) {
   if (image.width === width && image.height === height) return image
   const { default: resize } = await import('@jsquash/resize')
+  // @jsquash 的 contain 会裁剪原图；这里只传入等比尺寸，用 stretch 保留全部像素。
   return resize(image, {
     width,
     height,
@@ -102,11 +98,8 @@ async function resizeImage(image: ImageData, width: number, height: number) {
 async function constrainDimensions(image: ImageData, maxDimension: number) {
   if (!maxDimension || Math.max(image.width, image.height) <= maxDimension) return image
   const scale = maxDimension / Math.max(image.width, image.height)
-  return resizeImage(
-    image,
-    Math.max(1, Math.round(image.width * scale)),
-    Math.max(1, Math.round(image.height * scale)),
-  )
+  const dimensions = scaledImageDimensions(image.width, image.height, scale)
+  return resizeImage(image, dimensions.width, dimensions.height)
 }
 
 function flattenTransparency(image: ImageData) {
@@ -122,17 +115,12 @@ function flattenTransparency(image: ImageData) {
   return new ImageData(data, image.width, image.height)
 }
 
-async function encode(
-  image: ImageData,
-  format: ImageFormat,
-  quality: number,
-  preset: CompressionPreset,
-) {
+async function encode(image: ImageData, format: ImageFormat, quality: number, preset: CompressionPreset) {
   const lossless = preset === 'lossless'
   switch (format) {
     case 'jpeg': {
       const { encode: encodeJpeg } = await import('@jsquash/jpeg')
-      return encodeJpeg(flattenTransparency(image), {
+      return encodeJpeg(image, {
         quality,
         progressive: true,
         optimize_coding: true,
@@ -187,7 +175,7 @@ async function encode(
 }
 
 async function encodeToTarget(
-  jobId: string,
+  reportProgress: ProgressReporter,
   initialImage: ImageData,
   format: ImageFormat,
   maxQuality: number,
@@ -203,43 +191,54 @@ async function encodeToTarget(
       smallest = { buffer, image: working, quality: null }
       if (buffer.byteLength <= targetBytes) return smallest
     } else {
-      let low = 12
-      let high = Math.max(12, Math.min(96, maxQuality))
-      let bestUnder: EncodedResult | null = null
-      let localSmallest: EncodedResult | null = null
+      const highQuality = Math.max(12, Math.min(96, maxQuality))
+      reportProgress(34 + scaleAttempt * 12, `正在评估目标体积，画质 ${highQuality}%`)
+      const highBuffer = await encode(working, format, highQuality, preset)
+      const highCandidate = { buffer: highBuffer, image: working, quality: highQuality }
+      if (!smallest || highBuffer.byteLength < smallest.buffer.byteLength) smallest = highCandidate
+      if (highBuffer.byteLength <= targetBytes) return highCandidate
 
-      for (let iteration = 0; iteration < 7 && low <= high; iteration += 1) {
-        const quality = Math.round((low + high) / 2)
-        report(jobId, 35 + scaleAttempt * 12 + iteration * 1.5, `正在逼近目标体积，画质 ${quality}%`)
-        const buffer = await encode(working, format, quality, preset)
-        const candidate = { buffer, image: working, quality }
-        if (!localSmallest || buffer.byteLength < localSmallest.buffer.byteLength) localSmallest = candidate
-
-        if (buffer.byteLength <= targetBytes) {
-          if (!bestUnder || quality > (bestUnder.quality ?? 0)) bestUnder = candidate
-          low = quality + 1
-        } else {
-          high = quality - 1
-        }
+      reportProgress(38 + scaleAttempt * 12, '正在评估最低体积')
+      const lowBuffer = await encode(working, format, 12, preset)
+      let bestUnder: EncodedResult | null = lowBuffer.byteLength <= targetBytes
+        ? { buffer: lowBuffer, image: working, quality: 12 }
+        : null
+      if (!smallest || lowBuffer.byteLength < smallest.buffer.byteLength) {
+        smallest = { buffer: lowBuffer, image: working, quality: 12 }
       }
 
-      if (bestUnder) return bestUnder
-      if (localSmallest) smallest = localSmallest
+      if (bestUnder) {
+        let low = 13
+        let high = highQuality - 1
+        for (let iteration = 0; iteration < 5 && low <= high; iteration += 1) {
+          const quality = Math.round((low + high) / 2)
+          reportProgress(42 + scaleAttempt * 12 + iteration * 1.6, `正在逼近目标体积，画质 ${quality}%`)
+          const buffer = await encode(working, format, quality, preset)
+          const candidate = { buffer, image: working, quality }
+          if (!smallest || buffer.byteLength < smallest.buffer.byteLength) smallest = candidate
+          if (buffer.byteLength <= targetBytes) {
+            bestUnder = candidate
+            low = quality + 1
+          } else {
+            high = quality - 1
+          }
+        }
+        return bestUnder
+      }
     }
 
     if (!smallest || Math.min(working.width, working.height) <= 96) break
     const idealScale = Math.sqrt(targetBytes / Math.max(1, smallest.buffer.byteLength)) * 0.94
     const scale = Math.max(0.42, Math.min(0.88, idealScale))
-    const width = Math.max(96, Math.round(working.width * scale))
-    const height = Math.max(96, Math.round(working.height * scale))
-    report(jobId, 58 + scaleAttempt * 10, `调整尺寸至 ${width} × ${height}`)
+    const { width, height } = scaledImageDimensions(working.width, working.height, scale, 96)
+    reportProgress(58 + scaleAttempt * 10, `调整尺寸至 ${width} × ${height}`)
     working = await resizeImage(working, width, height)
-    smallest = null
   }
 
   if (!smallest) {
-    const buffer = await encode(working, format, Math.max(12, Math.min(maxQuality, 30)), preset)
-    smallest = { buffer, image: working, quality: format === 'png' ? null : 30 }
+    const quality = format === 'png' ? maxQuality : 12
+    const buffer = await encode(working, format, quality, preset)
+    smallest = { buffer, image: working, quality: format === 'png' ? null : quality }
   }
   return smallest
 }
@@ -250,19 +249,20 @@ async function createJxlPreview(image: ImageData) {
   return encodePng(preview)
 }
 
-async function compress(request: WorkerRequest) {
-  const { jobId, buffer, fileName, mimeType, settings } = request
-  report(jobId, 5, '正在识别图片')
-  const inputFormat = detectFormat(buffer, fileName, mimeType)
-  report(jobId, 14, `正在解码 ${inputFormat.toUpperCase()}`)
-  let image = await decode(buffer, inputFormat)
-  report(jobId, 27, '正在优化像素')
-  image = await constrainDimensions(image, settings.maxDimension)
+async function compressVariant(
+  jobId: string,
+  sourceImage: ImageData,
+  settings: CompressionVariantSettings,
+): Promise<WorkerResult> {
+  const reportProgress = (progress: number, stage: string) => report(jobId, settings.variantId, progress, stage)
+  reportProgress(24, '正在优化像素')
+  let image = await constrainDimensions(sourceImage, settings.maxDimension)
+  if (settings.outputFormat === 'jpeg') image = flattenTransparency(image)
 
   let result: EncodedResult
   if (settings.targetBytes) {
     result = await encodeToTarget(
-      jobId,
+      reportProgress,
       image,
       settings.outputFormat,
       settings.quality,
@@ -270,7 +270,7 @@ async function compress(request: WorkerRequest) {
       settings.preset,
     )
   } else {
-    report(jobId, 48, `正在编码 ${settings.outputFormat.toUpperCase()}`)
+    reportProgress(48, `正在编码 ${settings.outputFormat.toUpperCase()}`)
     const outputBuffer = await encode(image, settings.outputFormat, settings.quality, settings.preset)
     result = {
       buffer: outputBuffer,
@@ -279,23 +279,38 @@ async function compress(request: WorkerRequest) {
     }
   }
 
-  report(jobId, 92, '正在生成预览')
+  reportProgress(92, '正在生成预览')
   const previewBuffer = settings.outputFormat === 'jxl' ? await createJxlPreview(result.image) : null
-  report(jobId, 100, '完成')
-  send(
-    {
-      type: 'result',
-      jobId,
-      outputBuffer: result.buffer,
-      previewBuffer,
-      outputFormat: settings.outputFormat,
-      mimeType: MIME_TYPES[settings.outputFormat],
-      width: result.image.width,
-      height: result.image.height,
-      qualityUsed: result.quality,
-    },
-    previewBuffer ? [result.buffer, previewBuffer] : [result.buffer],
-  )
+  reportProgress(100, '完成')
+  return {
+    variantId: settings.variantId,
+    outputBuffer: result.buffer,
+    previewBuffer,
+    outputFormat: settings.outputFormat,
+    mimeType: MIME_TYPES[settings.outputFormat],
+    width: result.image.width,
+    height: result.image.height,
+    qualityUsed: result.quality,
+  }
+}
+
+async function compress(request: WorkerRequest) {
+  if (request.variants.length === 0) throw new Error('没有可处理的图片输出')
+  const firstVariant = request.variants[0]
+  report(request.jobId, firstVariant.variantId, 5, '正在识别图片')
+  const inputFormat = detectFormat(request.buffer, request.fileName, request.mimeType)
+  report(request.jobId, firstVariant.variantId, 12, `正在解码 ${inputFormat.toUpperCase()}`)
+  const sourceImage = await decode(request.buffer, inputFormat)
+  report(request.jobId, firstVariant.variantId, 20, '图片解码完成')
+
+  const results: WorkerResult[] = []
+  for (const settings of request.variants) {
+    results.push(await compressVariant(request.jobId, sourceImage, settings))
+  }
+  const transfers = results.flatMap((result) => result.previewBuffer
+    ? [result.outputBuffer, result.previewBuffer]
+    : [result.outputBuffer])
+  send({ type: 'result', jobId: request.jobId, results }, transfers)
 }
 
 self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
