@@ -1,5 +1,7 @@
 import {
   CheckCircle,
+  CaretDown,
+  CaretUp,
   DownloadSimple,
   FileImage,
   FilePdf,
@@ -7,11 +9,12 @@ import {
   SpinnerGap,
   WarningCircle,
 } from '@phosphor-icons/react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Messages } from '../i18n'
 import {
   formatBytes,
   kindLabel,
+  QUALITY_PRESETS,
   qualityLabel,
   statusText,
   type MediaJob,
@@ -44,6 +47,26 @@ export function JobList({
 }: JobListProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const previousProcessingIdsRef = useRef(new Set<string>())
+  const [sort, setSort] = useState<{ preset: QualityPreset; direction: 'ascending' | 'descending' } | null>(null)
+  const showVariantHeader = jobs.some((job) => job.allQualities)
+  const displayedJobs = useMemo(() => {
+    if (!sort) return jobs
+    return jobs
+      .map((job, originalIndex) => ({
+        job,
+        originalIndex,
+        bytes: job.variants.find((variant) => variant.preset === sort.preset)?.blob.size,
+      }))
+      .sort((left, right) => {
+        if (left.bytes === undefined && right.bytes === undefined) return left.originalIndex - right.originalIndex
+        if (left.bytes === undefined) return 1
+        if (right.bytes === undefined) return -1
+        const sizeOrder = left.bytes - right.bytes
+        if (sizeOrder === 0) return left.originalIndex - right.originalIndex
+        return sort.direction === 'ascending' ? sizeOrder : -sizeOrder
+      })
+      .map(({ job }) => job)
+  }, [jobs, sort])
 
   useEffect(() => {
     const processingIds = new Set(
@@ -73,7 +96,7 @@ export function JobList({
   }, [jobs])
 
   const selectAdjacentJob = (jobId: string, direction: -1 | 1) => {
-    const selectableJobs = jobs.filter((job) => job.status === 'done' && job.resultUrl)
+    const selectableJobs = displayedJobs.filter((job) => job.status === 'done' && job.resultUrl)
     const currentIndex = selectableJobs.findIndex((job) => job.id === jobId)
     if (currentIndex < 0 || selectableJobs.length === 0) return
     const nextJob = selectableJobs[(currentIndex + direction + selectableJobs.length) % selectableJobs.length]
@@ -88,7 +111,33 @@ export function JobList({
 
   return (
     <div className="job-list" ref={listRef}>
-      {jobs.map((job) => {
+      {showVariantHeader ? (
+        <div className="job-list-header">
+          <div className="variant-column-headers" aria-label={messages.allQualities}>
+            {QUALITY_PRESETS.map((preset) => {
+              const active = sort?.preset === preset
+              const nextDirection = active && sort.direction === 'ascending' ? 'descending' : 'ascending'
+              const label = qualityLabel(preset, messages)
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  className={active ? 'is-active' : undefined}
+                  data-sort-direction={active ? sort.direction : 'none'}
+                  aria-pressed={active}
+                  aria-label={`${messages.sortQuality(label)}·${active ? (sort.direction === 'ascending' ? messages.sortAscending : messages.sortDescending) : messages.sortAscending}`}
+                  title={`${messages.sortQuality(label)}·${active ? (sort.direction === 'ascending' ? messages.sortAscending : messages.sortDescending) : messages.sortAscending}`}
+                  onClick={() => setSort({ preset, direction: nextDirection })}
+                >
+                  <span>{label}</span>
+                  {active ? (sort.direction === 'ascending' ? <CaretUp size={10} weight="bold" /> : <CaretDown size={10} weight="bold" />) : null}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+      {displayedJobs.map((job) => {
         const outputBytes = job.resultBlob?.size ?? 0
         const outputRatio = outputBytes > 0 ? Math.round((outputBytes / job.file.size) * 100) : 0
 
@@ -132,7 +181,7 @@ export function JobList({
             <div className="job-copy">
               <strong title={job.file.name}>{job.file.name}</strong>
               <p>
-                {job.status === 'done' && job.resultBlob
+                {job.status === 'done' && job.resultBlob && job.variants.length <= 1
                   ? `${formatBytes(job.file.size)} → ${formatBytes(job.resultBlob.size)}`
                   : formatBytes(job.file.size)}
               </p>
@@ -159,14 +208,12 @@ export function JobList({
                 {job.variants.map((variant) => (
                   <div
                     className="variant-result-item"
+                    data-output-bytes={variant.blob.size}
                     key={variant.preset}
                   >
-                    <b>{qualityLabel(variant.preset as QualityPreset, messages)}</b>
                     <small>
                       <span className="variant-size">{formatBytes(variant.blob.size)}</span>
-                      <span className="variant-ratio">
-                        {job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0}%
-                      </span>
+                      <AnimatedPercentage value={job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0} className="variant-ratio" />
                     </small>
                   </div>
                 ))}

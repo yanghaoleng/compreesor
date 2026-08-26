@@ -189,7 +189,8 @@ const compactProgressBox = await page.locator('.job-progress').first().boundingB
 if (!compactCopyBox || !compactProgressBox || Math.abs((compactProgressBox.y + compactProgressBox.height / 2) - (compactCopyBox.y + compactCopyBox.height / 2)) > 3) {
   throw new Error('Compact progress should sit in the vertical middle of the file information')
 }
-if (!/^\d+%$/.test((await page.locator('.job-row').first().locator('.job-state').innerText()).trim())) {
+await page.waitForFunction(() => /^\d+%$/.test(document.querySelector('.job-row .job-state')?.textContent?.trim() ?? ''))
+if (!/^\d+%$/.test((await page.locator('.job-row').first().locator('.job-state').innerText()).replace(/\s+/g, ''))) {
   throw new Error('Image result ratio is missing beside the green check')
 }
 const rowBorders = await page.locator('.job-row').first().evaluate((element) => {
@@ -437,7 +438,6 @@ if (await comparisonPage.locator('.variant-hover-preview').count()) throw new Er
 const qualityColumns = await comparisonPage.locator('.variant-result-item').evaluateAll((items) => items.map((item) => {
   const box = item.getBoundingClientRect()
   const style = getComputedStyle(item)
-  const title = item.querySelector('b')?.getBoundingClientRect()
   const value = item.querySelector('small')
   const valueBox = value?.getBoundingClientRect()
   const valueStyle = value ? getComputedStyle(value) : null
@@ -448,26 +448,40 @@ const qualityColumns = await comparisonPage.locator('.variant-result-item').eval
     border: style.borderWidth,
     background: style.backgroundColor,
     textAlign: style.textAlign,
-    titleRightGap: title ? box.right - title.right : null,
+    titleCount: item.querySelectorAll('b').length,
     valueY: valueBox?.y ?? null,
     valueFontSize: valueStyle ? parseFloat(valueStyle.fontSize) : null,
-    ratioText: item.querySelector('.variant-ratio')?.textContent?.trim() ?? '',
+    ratioText: item.querySelector('.variant-ratio')?.textContent?.replace(/\s+/g, '') ?? '',
   }
 }))
 const compactComparisonRowHeight = await comparisonPage.locator('.job-row').first().evaluate((element) => element.getBoundingClientRect().height)
+const qualityHeader = await comparisonPage.locator('.variant-column-headers button').evaluateAll((buttons) => buttons.map((button) => ({
+  text: button.textContent?.trim() ?? '',
+  width: button.getBoundingClientRect().width,
+  fontSize: parseFloat(getComputedStyle(button).fontSize),
+})))
 if (
   qualityColumns.length !== 3
   || qualityColumns.some((column) => column.border !== '0px' || column.background !== 'rgba(0, 0, 0, 0)')
-  || qualityColumns.some((column) => column.textAlign !== 'right' || column.titleRightGap === null || Math.abs(column.titleRightGap) > 1)
+  || qualityColumns.some((column) => column.textAlign !== 'right' || column.titleCount !== 0)
   || Math.max(...qualityColumns.map((column) => column.y)) - Math.min(...qualityColumns.map((column) => column.y)) > 1
   || Math.max(...qualityColumns.map((column) => column.width)) - Math.min(...qualityColumns.map((column) => column.width)) > 1
   || qualityColumns.some((column) => column.width > 74)
-  || qualityColumns.some((column) => column.valueY === null || column.valueFontSize === null || column.valueFontSize < 10 || !/^\d+%$/.test(column.ratioText))
+  || qualityColumns.some((column) => column.valueY === null || column.valueFontSize === null || column.valueFontSize < 11 || !/^\d+%$/.test(column.ratioText))
   || Math.max(...qualityColumns.map((column) => column.valueY)) - Math.min(...qualityColumns.map((column) => column.valueY)) > 1
+  || qualityHeader.length !== 3
+  || qualityHeader.map((column) => column.text).join('|') !== '极限|够用|无损'
+  || qualityHeader.some((column) => column.fontSize < 11 || column.width > 74)
   || compactComparisonRowHeight > 84
 ) {
-  throw new Error(`Quality results should be compact, right-aligned borderless columns: ${JSON.stringify({ qualityColumns, compactComparisonRowHeight })}`)
+  throw new Error(`Quality results should use compact header-aligned columns: ${JSON.stringify({ qualityColumns, qualityHeader, compactComparisonRowHeight })}`)
 }
+if ((await comparisonPage.locator('.job-row.has-variants .job-copy p').innerText()).includes('→')) throw new Error('Three-quality rows should show only the original file size on the left')
+const extremeHeader = comparisonPage.getByRole('button', { name: /按极限压缩后体积排序/ })
+await extremeHeader.click()
+if (await extremeHeader.getAttribute('data-sort-direction') !== 'ascending') throw new Error('First quality-header click should sort ascending')
+await extremeHeader.click()
+if (await extremeHeader.getAttribute('data-sort-direction') !== 'descending') throw new Error('Second quality-header click should sort descending')
 if (await comparisonPage.locator('.result-ratio-range').count()) throw new Error('Three-quality rows should not show a unified ratio range')
 if (await comparisonPage.locator('.job-row.has-variants .job-state svg').count()) throw new Error('Three-quality rows should omit the redundant completion icon')
 if ((await comparisonPage.locator('.job-row.has-variants .job-state').innerText()).trim() !== '') throw new Error('Three-quality rows should omit redundant completion text')
@@ -532,6 +546,18 @@ await comparisonPage.waitForFunction(() => document.querySelector('.result-previ
 if ((await comparisonPage.locator('.result-preview > header strong').innerText()).trim() !== 'compreesor-fixture.png') {
   throw new Error('Preview header should retain the original filename')
 }
+const previewTitleLine = await comparisonPage.locator('.preview-title').evaluate((title) => {
+  const name = title.querySelector('strong')?.getBoundingClientRect()
+  const size = title.querySelector('.preview-source-size')?.getBoundingClientRect()
+  return name && size ? {
+    sizeText: title.querySelector('.preview-source-size')?.textContent?.trim(),
+    baselineGap: Math.abs(name.bottom - size.bottom),
+    spanCount: title.querySelectorAll(':scope > span').length,
+  } : null
+})
+if (!previewTitleLine || !previewTitleLine.sizeText || previewTitleLine.baselineGap > 2 || previewTitleLine.spanCount !== 1) {
+  throw new Error(`Preview title should show filename and original size on one line: ${JSON.stringify(previewTitleLine)}`)
+}
 const initialComparisonGeometry = await comparisonPage.locator('.comparison-image-stage').evaluateAll((stages) => stages.map((stage) => {
   const image = stage.querySelector('img')
   if (!(image instanceof HTMLImageElement)) return null
@@ -582,19 +608,23 @@ const comparisonButtons = await comparisonPage.locator('.comparison-card > heade
   const button = header.querySelector('button')?.getBoundingClientRect()
   const size = header.querySelector('.comparison-size')
   const quality = header.querySelector('.comparison-quality')
+  const ratio = header.querySelector('.comparison-ratio')
   const sizeBox = size?.getBoundingClientRect()
   const qualityBox = quality?.getBoundingClientRect()
-  return button && size && quality && sizeBox && qualityBox ? {
+  const ratioBox = ratio?.getBoundingClientRect()
+  return button && size && quality && ratio && sizeBox && qualityBox && ratioBox ? {
     width: button.width,
     height: button.height,
     beforeTitle: button.right <= sizeBox.left,
-    sizeAboveQuality: sizeBox.bottom <= qualityBox.top,
+    sameLine: Math.max(sizeBox.bottom, qualityBox.bottom, ratioBox.bottom) - Math.min(sizeBox.bottom, qualityBox.bottom, ratioBox.bottom) <= 2,
+    compressedOnly: !size.textContent?.includes('→'),
+    ratioAfterSize: ratioBox.left >= sizeBox.right,
     sizeFont: parseFloat(getComputedStyle(size).fontSize),
     qualityFont: parseFloat(getComputedStyle(quality).fontSize),
   } : null
 }))
-if (comparisonButtons.some((button) => !button || button.width > 25 || button.height > 25 || !button.beforeTitle || !button.sizeAboveQuality || button.sizeFont <= button.qualityFont)) {
-  throw new Error(`Comparison cards should show a larger file size above the smaller quality name: ${JSON.stringify(comparisonButtons)}`)
+if (comparisonButtons.some((button) => !button || button.width > 25 || button.height > 25 || !button.beforeTitle || !button.sameLine || !button.compressedOnly || !button.ratioAfterSize || button.sizeFont <= button.qualityFont)) {
+  throw new Error(`Comparison cards should show quality, compressed size and ratio on one line: ${JSON.stringify(comparisonButtons)}`)
 }
 const wheelStageBox = await comparisonPage.locator('.comparison-image-stage').first().boundingBox()
 const wheelImageBefore = await comparisonPage.locator('.comparison-image-stage img').first().boundingBox()
@@ -710,6 +740,26 @@ const comparisonQualityFolderCounts = Object.fromEntries(['极限', '够用', '�
 if (comparisonArchiveEntries.length !== 3 || Object.values(comparisonQualityFolderCounts).some((count) => count !== 1)) {
   throw new Error(`Three-quality ZIP should contain one folder per quality: ${JSON.stringify({ comparisonArchiveEntries, comparisonQualityFolderCounts })}`)
 }
+await comparisonPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
+await comparisonPage.waitForFunction(
+  () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 2,
+  undefined,
+  { timeout: 180_000 },
+)
+if (await comparisonPage.locator('.job-row.status-error').count()) throw new Error('Second sorting fixture failed')
+const sortedExtremeBytes = async () => comparisonPage.locator('.job-row .variant-result-item:first-child').evaluateAll(
+  (items) => items.map((item) => Number(item.getAttribute('data-output-bytes'))),
+)
+const descendingExtremeBytes = await sortedExtremeBytes()
+if (descendingExtremeBytes.some((bytes, index) => index > 0 && descendingExtremeBytes[index - 1] < bytes)) {
+  throw new Error(`Extreme header should sort completed rows descending: ${descendingExtremeBytes.join(', ')}`)
+}
+await comparisonPage.getByRole('button', { name: /按极限压缩后体积排序/ }).click()
+const ascendingExtremeBytes = await sortedExtremeBytes()
+if (ascendingExtremeBytes.some((bytes, index) => index > 0 && ascendingExtremeBytes[index - 1] > bytes)) {
+  throw new Error(`Extreme header should sort completed rows ascending: ${ascendingExtremeBytes.join(', ')}`)
+}
+await comparisonPage.screenshot({ path: '/tmp/compreesor-quality-table.png', fullPage: false })
 await comparisonPage.close()
 
 const singleDownload = page.waitForEvent('download')
@@ -995,20 +1045,13 @@ if (await svgPage.locator('.job-row.status-error').count()) {
 }
 if ((await svgPage.locator('.thumbnail img').count()) !== 1) throw new Error('SVG thumbnail is missing')
 const svgRatio = svgPage.locator('.result-ratio')
-if (await svgRatio.getAttribute('data-animation') !== 'count-up') throw new Error('Result ratio count-up animation is missing')
+if (await svgRatio.getAttribute('data-animation') !== 'calligraph-number-in') throw new Error('Calligraph number entrance animation is missing')
+const ratioAnimation = await svgRatio.getAttribute('data-animation')
 const targetRatio = Number(await svgRatio.getAttribute('data-target-ratio'))
-const animatedValues = []
-for (let index = 0; index < 6; index += 1) {
-  animatedValues.push(Number((await svgRatio.innerText()).replace('%', '')))
-  await svgPage.waitForTimeout(110)
-}
 await svgPage.waitForFunction(
   (target) => document.querySelector('.result-ratio')?.textContent?.trim() === `${target}%`,
   targetRatio,
 )
-if (new Set(animatedValues).size < 2 || animatedValues.at(-1) <= animatedValues[0]) {
-  throw new Error(`Result ratio did not visibly count up: ${animatedValues.join(', ')}`)
-}
 const svgDownload = svgPage.waitForEvent('download')
 await svgPage.locator('.job-action button').first().click()
 const optimizedSvg = await svgDownload
@@ -1118,11 +1161,12 @@ console.log(JSON.stringify({
   svgCompression: [sourceSvgSize, optimizedSvgSize],
   svgPngDownload: svgPng.suggestedFilename(),
   geometryDimensions,
-  animatedValues,
+  ratioAnimation,
   svgScreenshot: '/tmp/compreesor-svg.png',
   bodyWidth,
   actionOrder: [clearBox.x, addBox.x, zipBox.x],
   desktopScreenshot: '/tmp/compreesor-desktop.png',
+  qualityTableScreenshot: '/tmp/compreesor-quality-table.png',
   pinnedDonateScreenshot: '/tmp/compreesor-donate-pinned.png',
   mobileScreenshot: '/tmp/compreesor-mobile.png',
   mobileListScreenshot: '/tmp/compreesor-mobile-list.png',

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Calligraph } from 'calligraph'
+import { useEffect, useMemo, useRef } from 'react'
 
 const SPRING_SCALE_IN = {
   duration: 259,
@@ -7,32 +8,20 @@ const SPRING_SCALE_IN = {
   initialDelayMax: 400,
 } as const
 
-export function AnimatedPercentage({ value }: { value: number }) {
-  const [displayValue, setDisplayValue] = useState(0)
-
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      setDisplayValue(value)
-      return undefined
-    }
-    let frame = 0
-    const startedAt = performance.now()
-    const duration = 760
-    const update = (now: number) => {
-      const progress = Math.min(1, (now - startedAt) / duration)
-      const eased = 1 - (1 - progress) ** 3
-      setDisplayValue(Math.round(value * eased))
-      if (progress < 1) frame = window.requestAnimationFrame(update)
-    }
-    setDisplayValue(0)
-    frame = window.requestAnimationFrame(update)
-    return () => window.cancelAnimationFrame(frame)
-  }, [value])
-
+export function AnimatedPercentage({ value, className = '' }: { value: number; className?: string }) {
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   return (
-    <span className="result-ratio" data-target-ratio={value} data-animation="count-up">
-      {displayValue}%
-    </span>
+    <Calligraph
+      className={`result-ratio${value === 100 ? ' is-neutral' : ''}${className ? ` ${className}` : ''}`}
+      data-target-ratio={value}
+      data-animation="calligraph-number-in"
+      variant="number"
+      animation="snappy"
+      initial={!reducedMotion}
+      autoSize={false}
+    >
+      {`${value}%`}
+    </Calligraph>
   )
 }
 

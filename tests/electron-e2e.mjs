@@ -40,8 +40,9 @@ try {
   }
   if (!files.includes('desktop.svg')) throw new Error('All-quality mode should preserve the source file')
   if ((await window.locator('.variant-result-item').count()) !== 3) throw new Error('Electron result list does not show three qualities')
+  if ((await window.locator('.variant-column-headers button').allInnerTexts()).join('|') !== '极限|够用|无损') throw new Error('Electron result table header is missing')
   const variantRatios = await window.locator('.variant-result-item .variant-ratio').allInnerTexts()
-  if (variantRatios.length !== 3 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.trim()))) throw new Error(`Electron per-quality ratios are missing: ${variantRatios.join(' | ')}`)
+  if (variantRatios.length !== 3 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.replace(/\s+/g, '')))) throw new Error(`Electron per-quality ratios are missing: ${variantRatios.join(' | ')}`)
   if ((await window.locator('.job-state').innerText()).trim() !== '') throw new Error('Electron all-quality row should keep only the completion icon at the far right')
   await window.locator('.job-row').first().click()
   if ((await window.locator('.comparison-card').count()) !== 3) throw new Error('Electron comparison preview is missing')

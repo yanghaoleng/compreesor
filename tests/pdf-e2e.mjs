@@ -37,10 +37,12 @@ try {
   const thumbnail = await page.locator('.thumbnail').boundingBox()
   if (!thumbnail || thumbnail.width < 64) throw new Error(`Spacious thumbnail should remain legible in the compact row: ${JSON.stringify(thumbnail)}`)
   if ((await page.locator('.variant-results .variant-result-item').count()) !== 3) throw new Error('Three right-aligned results are missing')
+  if ((await page.locator('.variant-column-headers button').allInnerTexts()).join('|') !== '极限|够用|无损') throw new Error('Three-quality table header is missing')
   const variantRatios = await page.locator('.variant-result-item .variant-ratio').allInnerTexts()
-  if (variantRatios.length !== 3 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.trim()))) throw new Error(`Per-quality ratios are missing: ${variantRatios.join(' | ')}`)
+  if (variantRatios.length !== 3 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.replace(/\s+/g, '')))) throw new Error(`Per-quality ratios are missing: ${variantRatios.join(' | ')}`)
   if (await page.locator('.result-ratio-range').count()) throw new Error('Three-quality PDF rows should not show a unified ratio range')
   if ((await page.locator('.job-state').innerText()).trim() !== '') throw new Error('Three-quality PDF rows should keep only the completion icon at the far right')
+  if ((await page.locator('.job-copy p').innerText()).includes('→')) throw new Error('Three-quality PDF rows should show only the original size on the left')
 
   await page.locator('.job-row').first().click()
   if ((await page.locator('.comparison-card').count()) !== 3) throw new Error('Comparison preview should show three cards')

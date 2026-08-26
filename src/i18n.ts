@@ -9,6 +9,9 @@ export type Messages = {
   balanced: string
   lossless: string
   allQualities: string
+  sortQuality: (quality: string) => string
+  sortAscending: string
+  sortDescending: string
   target100k: string
   target500k: string
   target2m: string
@@ -126,7 +129,7 @@ export const LANGUAGE_OPTIONS: Array<{ id: Locale; short: string; label: string;
 
 export const I18N: Record<Locale, Messages> = {
   zh: {
-    brandSubtitle: '文件压缩大救星', outputPreferences: '输出偏好', compressionLevel: '压缩比例', extreme: '极限', balanced: '够用', lossless: '无损', allQualities: '三档并行',
+    brandSubtitle: '文件压缩大救星', outputPreferences: '输出偏好', compressionLevel: '压缩比例', extreme: '极限', balanced: '够用', lossless: '无损', allQualities: '三档并行', sortQuality: (quality) => `按${quality}压缩后体积排序`, sortAscending: '升序', sortDescending: '降序',
     target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: '图片和 PDF', video: '视频', pdf: 'PDF', splittingPdf: '正在按页展开 PDF', pdfSplitFailed: 'PDF 页面转换失败',
     imageOriginal: '保持原格式', original: '原格式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '选择或拖入文件',
@@ -167,7 +170,7 @@ export const I18N: Record<Locale, Messages> = {
     homeLabel: '文件压缩大救星首页', progressLabel: (fileName) => `${fileName} 的处理进度`,
   },
   'zh-Hant': {
-    brandSubtitle: '檔案壓縮大救星', outputPreferences: '輸出偏好', compressionLevel: '壓縮比例', extreme: '極限', balanced: '夠用', lossless: '無損', allQualities: '三檔並行',
+    brandSubtitle: '檔案壓縮大救星', outputPreferences: '輸出偏好', compressionLevel: '壓縮比例', extreme: '極限', balanced: '夠用', lossless: '無損', allQualities: '三檔並行', sortQuality: (quality) => `依${quality}壓縮後大小排序`, sortAscending: '升序', sortDescending: '降序',
     target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: '圖片與 PDF', video: '影片', pdf: 'PDF', splittingPdf: '正在逐頁展開 PDF', pdfSplitFailed: 'PDF 頁面轉換失敗',
     imageOriginal: '保持原格式', original: '原格式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '選擇或拖入檔案',
@@ -208,7 +211,7 @@ export const I18N: Record<Locale, Messages> = {
     homeLabel: '檔案壓縮大救星首頁', progressLabel: (fileName) => `${fileName} 的處理進度`,
   },
   en: {
-    brandSubtitle: 'File Compression Lifesaver', outputPreferences: 'Output preferences', compressionLevel: 'Compression', extreme: 'Extreme', balanced: 'Balanced', lossless: 'Lossless', allQualities: 'Three qualities',
+    brandSubtitle: 'File Compression Lifesaver', outputPreferences: 'Output preferences', compressionLevel: 'Compression', extreme: 'Extreme', balanced: 'Balanced', lossless: 'Lossless', allQualities: 'Three qualities', sortQuality: (quality) => `Sort by ${quality} compressed size`, sortAscending: 'Ascending', sortDescending: 'Descending',
     target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: 'Images & PDF', video: 'Video', pdf: 'PDF', splittingPdf: 'Splitting PDF into pages', pdfSplitFailed: 'Could not convert PDF pages',
     imageOriginal: 'Keep original format', original: 'Original', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV with alpha', extractMp3: 'Extract MP3', chooseDrop: 'Choose or drop files',
@@ -249,7 +252,7 @@ export const I18N: Record<Locale, Messages> = {
     homeLabel: 'File Compression Lifesaver home', progressLabel: (fileName) => `Processing progress for ${fileName}`,
   },
   ja: {
-    brandSubtitle: 'ファイル圧縮の救世主', outputPreferences: '出力設定', compressionLevel: '圧縮率', extreme: '極限', balanced: '標準', lossless: 'ロスレス', allQualities: '3種類を並行',
+    brandSubtitle: 'ファイル圧縮の救世主', outputPreferences: '出力設定', compressionLevel: '圧縮率', extreme: '極限', balanced: '標準', lossless: 'ロスレス', allQualities: '3種類を並行', sortQuality: (quality) => `${quality}の圧縮後サイズで並べ替え`, sortAscending: '昇順', sortDescending: '降順',
     target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: '画像・PDF', video: '動画', pdf: 'PDF', splittingPdf: 'PDF をページごとに展開中', pdfSplitFailed: 'PDF ページの変換に失敗しました',
     imageOriginal: '元の形式を保持', original: '元の形式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: '透過 MOV', extractMp3: 'MP3 を抽出', chooseDrop: 'ファイルを選択またはドロップ',

@@ -9,6 +9,7 @@ import {
 } from '../jobDomain'
 import type { Messages } from '../i18n'
 import type { QualityPreset } from '../types'
+import { AnimatedPercentage } from './AnimatedText'
 import { CustomSelect } from './CustomSelect'
 
 const COMMON_ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
@@ -239,7 +240,7 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
       <header>
         <div className="preview-title">
           <strong title={job.file.name}>{job.file.name}</strong>
-          <span>{job.outputLabel}</span>
+          <span className="preview-source-size">{formatBytes(job.file.size)}</span>
         </div>
         <div className="preview-header-actions">
           {supportsZoomControls ? (
@@ -268,9 +269,13 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
                 <button type="button" onClick={() => onDownload(job, variant)} aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}>
                   <DownloadSimple size={13} weight="bold" />
                 </button>
-                <div>
-                  <strong className="comparison-size">{formatBytes(job.file.size)} → {formatBytes(variant.blob.size)}</strong>
+                <div className="comparison-summary">
                   <span className="comparison-quality">{qualityLabel(variant.preset as QualityPreset, messages)}</span>
+                  <strong className="comparison-size">{formatBytes(variant.blob.size)}</strong>
+                  <AnimatedPercentage
+                    value={job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0}
+                    className="comparison-ratio"
+                  />
                 </div>
               </header>
               {job.kind === 'video' ? (

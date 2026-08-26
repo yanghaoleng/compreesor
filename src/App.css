@@ -1295,6 +1295,64 @@
   background: var(--line);
 }
 
+.job-list-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  min-width: 0;
+  min-height: 31px;
+  padding: 3px 8px 4px;
+  display: grid;
+  grid-template-columns: 44px minmax(150px, 1fr) minmax(204px, 222px);
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.queue-section.is-spacious .job-list-header {
+  grid-template-columns: 66px minmax(170px, 1fr) minmax(204px, 222px);
+  gap: 10px;
+}
+
+.variant-column-headers {
+  grid-column: 3;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.variant-column-headers button {
+  min-width: 0;
+  height: 24px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  color: var(--muted);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.variant-column-headers button:hover,
+.variant-column-headers button.is-active {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.variant-column-headers button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 62%, transparent);
+  outline-offset: -2px;
+}
+
 .job-row {
   min-width: 0;
   min-height: 58px;
@@ -1401,10 +1459,9 @@
 
 .variant-result-item {
   min-width: 0;
-  display: grid;
-  grid-template-rows: 13px 15px;
-  align-content: start;
-  gap: 1px;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -1413,36 +1470,30 @@
   justify-items: end;
 }
 
-.variant-result-item > b,
-.variant-result-item > small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.variant-result-item > b {
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 850;
-  line-height: 13px;
-}
-
 .variant-result-item > small {
   width: 100%;
   display: flex;
   align-items: baseline;
   justify-content: flex-end;
-  gap: 2px;
+  gap: 3px;
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 18px;
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .variant-ratio {
   color: var(--success);
-  font-weight: 800;
+  font-size: 11.5px;
+  font-weight: 850;
+}
+
+.result-ratio.is-neutral {
+  color: var(--muted);
 }
 
 .thumbnail {
@@ -1772,8 +1823,9 @@
 
 .preview-title {
   min-width: 0;
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .result-preview > header strong,
@@ -1784,12 +1836,19 @@
 }
 
 .result-preview > header strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .result-preview > header span {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
+}
+
+.result-preview > header .preview-source-size {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .preview-header-actions {
@@ -1908,8 +1967,9 @@
 
 .comparison-card > header > div {
   min-width: 0;
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
 }
 
 .comparison-card > header strong,
@@ -1921,15 +1981,26 @@
 
 .comparison-card > header .comparison-size {
   color: var(--text);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
 }
 
 .comparison-card > header .comparison-quality {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 800;
+}
+
+.comparison-card > header .comparison-ratio {
+  color: var(--success);
+  font-size: 11px;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison-card > header .comparison-ratio.is-neutral {
+  color: var(--muted);
 }
 
 .comparison-card > header button {
@@ -2149,6 +2220,12 @@
     grid-template-columns: 40px minmax(80px, 1fr) minmax(196px, 204px);
     grid-template-areas: "thumb copy variants";
     align-items: center;
+  }
+
+  .job-list-header,
+  .queue-section.is-spacious .job-list-header {
+    grid-template-columns: 40px minmax(80px, 1fr) minmax(196px, 204px);
+    gap: 7px;
   }
 
   .queue-section.is-spacious .job-row.has-variants {
