@@ -40,10 +40,13 @@ try {
   }
   if (!files.includes('desktop.svg')) throw new Error('All-quality mode should preserve the source file')
   if ((await window.locator('.variant-result-item').count()) !== 3) throw new Error('Electron result list does not show three qualities')
+  const variantRatios = await window.locator('.variant-result-item .variant-ratio').allInnerTexts()
+  if (variantRatios.length !== 3 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.trim()))) throw new Error(`Electron per-quality ratios are missing: ${variantRatios.join(' | ')}`)
+  if ((await window.locator('.job-state').innerText()).trim() !== '') throw new Error('Electron all-quality row should keep only the completion icon at the far right')
   await window.locator('.job-row').first().click()
   if ((await window.locator('.comparison-card').count()) !== 3) throw new Error('Electron comparison preview is missing')
   if ((await window.locator('.comparison-toolbar').count()) !== 1) throw new Error('Electron synchronized comparison controls are missing')
-  await window.locator('.result-preview > header button').click()
+  await window.locator('.preview-close').click()
 
   await window.getByRole('button', { name: '清空' }).click()
   await window.locator('.preferences select').first().selectOption('balanced')

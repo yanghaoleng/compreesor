@@ -37,7 +37,10 @@ try {
   const thumbnail = await page.locator('.thumbnail').boundingBox()
   if (!thumbnail || thumbnail.width < 64) throw new Error(`Spacious thumbnail should remain legible in the compact row: ${JSON.stringify(thumbnail)}`)
   if ((await page.locator('.variant-results .variant-result-item').count()) !== 3) throw new Error('Three right-aligned results are missing')
-  if (!/^\d+%–\d+%$/.test((await page.locator('.result-ratio-range').getAttribute('aria-label')) ?? '')) throw new Error('Three-quality ratio range is missing')
+  const variantRatios = await page.locator('.variant-result-item .variant-ratio').allInnerTexts()
+  if (variantRatios.length !== 3 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.trim()))) throw new Error(`Per-quality ratios are missing: ${variantRatios.join(' | ')}`)
+  if (await page.locator('.result-ratio-range').count()) throw new Error('Three-quality PDF rows should not show a unified ratio range')
+  if ((await page.locator('.job-state').innerText()).trim() !== '') throw new Error('Three-quality PDF rows should keep only the completion icon at the far right')
 
   await page.locator('.job-row').first().click()
   if ((await page.locator('.comparison-card').count()) !== 3) throw new Error('Comparison preview should show three cards')
@@ -58,7 +61,7 @@ try {
   await page.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-card iframe')).every(
     (frame) => frame.getAttribute('src')?.includes('zoom=page-fit'),
   ))
-  await page.locator('.result-preview > header button').click()
+  await page.locator('.preview-close').click()
 
   const zipEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: '打包下载' }).click()
@@ -95,7 +98,7 @@ try {
   if ((await readFile(imagePdfPath, { encoding: 'utf8' })).slice(0, 4) !== '%PDF') throw new Error('Image to PDF result is invalid')
   await page.locator('.job-row').first().click()
   if ((await page.locator('.result-preview iframe').count()) !== 1) throw new Error('Image to PDF should use the PDF preview')
-  await page.locator('.result-preview > header button').click()
+  await page.locator('.preview-close').click()
 
   await page.getByRole('button', { name: '清空' }).click()
   await imageOutput.selectOption('jpeg')
@@ -128,7 +131,8 @@ try {
   await page.getByRole('button', { name: '放大' }).click()
   await page.waitForTimeout(140)
   const zoomedTransforms = await page.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => getComputedStyle(image).transform))
-  if (new Set(zoomedTransforms).size !== 1 || !zoomedTransforms[0].includes('1.25')) throw new Error(`Comparison zoom is not synchronized: ${zoomedTransforms.join(' | ')}`)
+  const zoomedScales = zoomedTransforms.map((transform) => Number(/^matrix\(([^,]+)/.exec(transform)?.[1]))
+  if (Math.max(...zoomedScales) - Math.min(...zoomedScales) > 0.002 || Math.abs(zoomedScales[0] - 1.25) > 0.002) throw new Error(`Comparison zoom is not synchronized: ${zoomedTransforms.join(' | ')}`)
   const stageBox = await page.locator('.comparison-image-stage').first().boundingBox()
   if (!stageBox) throw new Error('Comparison stage is missing')
   await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2)
@@ -138,13 +142,13 @@ try {
   await page.waitForTimeout(140)
   const movedTransforms = await page.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => getComputedStyle(image).transform))
   if (new Set(movedTransforms).size !== 1 || movedTransforms[0] === zoomedTransforms[0]) throw new Error(`Comparison pan is not synchronized: ${movedTransforms.join(' | ')}`)
-  await page.locator('.result-preview > header button').click()
+  await page.locator('.preview-close').click()
 
   await imageOutput.selectOption('jpeg')
   const reprocess = page.getByRole('button', { name: '全部重新处理' })
   await reprocess.waitFor()
   const reprocessBox = await reprocess.boundingBox()
-  const lastPreferenceBox = await page.locator('.preferences label').last().boundingBox()
+  const lastPreferenceBox = await page.locator('.preference-field').last().boundingBox()
   if (!reprocessBox || !lastPreferenceBox || reprocessBox.x <= lastPreferenceBox.x + lastPreferenceBox.width) throw new Error('Reprocess button should sit at the far right')
   await reprocess.click()
   if (!(await reprocess.isDisabled())) throw new Error('Reprocess button should disable after it is used')

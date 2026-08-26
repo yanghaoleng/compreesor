@@ -37,6 +37,9 @@ export type Messages = {
   packageDownload: string
   packageDownloaded: string
   packageDownloadAgain: string
+  packageMenuLabel: string
+  packageAllQualities: string
+  packageOnlyQuality: (quality: string) => string
   zipping: string
   files: (count: number) => string
   processingCount: (count: number) => string
@@ -124,18 +127,18 @@ export const LANGUAGE_OPTIONS: Array<{ id: Locale; short: string; label: string;
 export const I18N: Record<Locale, Messages> = {
   zh: {
     brandSubtitle: '文件压缩大救星', outputPreferences: '输出偏好', compressionLevel: '压缩比例', extreme: '极限', balanced: '够用', lossless: '无损', allQualities: '三档并行',
-    target100k: '≤ 100 KB（证照图片 / 报名头像）', target500k: '≤ 500 KB（证件扫描 / 表单附件）', target2m: '≤ 2 MB（报名材料 / 简历附件）', target5m: '≤ 5 MB（办事材料 / 合同附件）', target10m: '≤ 10 MB（PDF 文档 / 长材料）', image: '图片和 PDF', video: '视频', pdf: 'PDF', splittingPdf: '正在按页展开 PDF', pdfSplitFailed: 'PDF 页面转换失败',
+    target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: '图片和 PDF', video: '视频', pdf: 'PDF', splittingPdf: '正在按页展开 PDF', pdfSplitFailed: 'PDF 页面转换失败',
     imageOriginal: '保持原格式', original: '原格式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '选择或拖入文件',
     releaseDrop: '松开即可添加', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 和常见视频',
-    chooseFiles: '选择文件', continueUpload: '继续上传', clear: '清空', packageDownload: '打包下载', packageDownloaded: '已下载', packageDownloadAgain: '再次下载',
+    chooseFiles: '选择文件', continueUpload: '继续上传', clear: '清空', packageDownload: '打包下载', packageDownloaded: '已下载', packageDownloadAgain: '再次下载', packageMenuLabel: '选择打包档位', packageAllQualities: '全部下载', packageOnlyQuality: (quality) => `只打包${quality}`,
     zipping: '正在打包', files: (count) => `${count} 个文件`, processingCount: (count) => `正在处理 ${count} 个`,
     completedSummary: (count, saved) => `${count} 个已完成${saved > 0 ? ` · 节省 ${saved}%` : ''}`,
     imageKind: '图片', videoKind: '视频', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 份', waiting: '等待处理', processing: '正在处理',
     failed: '处理失败', retry: '重试', download: '下载', reveal: '在文件夹中显示', preview: '预览', closePreview: '关闭预览', resizePreview: '拖动调整预览高度', previousPreview: '上一个', nextPreview: '下一个', zoomOut: '缩小', zoomReset: '恢复 1:1', zoomIn: '放大', zoomLevel: '选择缩放比例', fitPreview: '全部显示', zoomHint: '使用按钮或 = / - 调整预览', syncZoomHint: '缩放会同步应用到三个预览', dragZoomHint: '拖动或滚轮缩放，三个结果同步',
     unsupported: '请选择 JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 或视频文件',
     tooLarge: '图片和 PDF 需小于 100 MB，GIF 或视频需小于 500 MB', ignored: '已忽略不支持的文件',
-    maxFiles: '一次最多处理 30 个文件', packageFailed: '打包失败，请先单个下载完成的文件',
+    maxFiles: '一次最多处理 1000 个文件', packageFailed: '打包失败，请先单个下载完成的文件',
     dragMore: '松开即可继续添加文件', reprocessAll: '全部重新处理', donateTitle: '打赏作者',
     donateIntro: '这个工具会一直免费，如果它帮你省了空间和时间，可以随意打赏。',
     donatePraises: [
@@ -165,18 +168,18 @@ export const I18N: Record<Locale, Messages> = {
   },
   'zh-Hant': {
     brandSubtitle: '檔案壓縮大救星', outputPreferences: '輸出偏好', compressionLevel: '壓縮比例', extreme: '極限', balanced: '夠用', lossless: '無損', allQualities: '三檔並行',
-    target100k: '≤ 100 KB（證照圖片 / 報名頭像）', target500k: '≤ 500 KB（證件掃描 / 表單附件）', target2m: '≤ 2 MB（報名資料 / 履歷附件）', target5m: '≤ 5 MB（辦事資料 / 合約附件）', target10m: '≤ 10 MB（PDF 文件 / 長篇資料）', image: '圖片與 PDF', video: '影片', pdf: 'PDF', splittingPdf: '正在逐頁展開 PDF', pdfSplitFailed: 'PDF 頁面轉換失敗',
+    target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: '圖片與 PDF', video: '影片', pdf: 'PDF', splittingPdf: '正在逐頁展開 PDF', pdfSplitFailed: 'PDF 頁面轉換失敗',
     imageOriginal: '保持原格式', original: '原格式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '選擇或拖入檔案',
     releaseDrop: '放開即可新增', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 與常見影片',
-    chooseFiles: '選擇檔案', continueUpload: '繼續上傳', clear: '清空', packageDownload: '打包下載', packageDownloaded: '已下載', packageDownloadAgain: '再次下載',
+    chooseFiles: '選擇檔案', continueUpload: '繼續上傳', clear: '清空', packageDownload: '打包下載', packageDownloaded: '已下載', packageDownloadAgain: '再次下載', packageMenuLabel: '選擇打包檔位', packageAllQualities: '全部下載', packageOnlyQuality: (quality) => `只打包${quality}`,
     zipping: '正在打包', files: (count) => `${count} 個檔案`, processingCount: (count) => `正在處理 ${count} 個`,
     completedSummary: (count, saved) => `${count} 個已完成${saved > 0 ? ` · 節省 ${saved}%` : ''}`,
     imageKind: '圖片', videoKind: '影片', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 份', waiting: '等待處理', processing: '正在處理',
     failed: '處理失敗', retry: '重試', download: '下載', reveal: '在資料夾中顯示', preview: '預覽', closePreview: '關閉預覽', resizePreview: '拖曳調整預覽高度', previousPreview: '上一個', nextPreview: '下一個', zoomOut: '縮小', zoomReset: '恢復 1:1', zoomIn: '放大', zoomLevel: '選擇縮放比例', fitPreview: '全部顯示', zoomHint: '使用按鈕或 = / - 調整預覽', syncZoomHint: '縮放會同步套用到三個預覽', dragZoomHint: '拖曳或滾輪縮放，三個結果同步',
     unsupported: '請選擇 JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 或影片檔案',
     tooLarge: '圖片與 PDF 需小於 100 MB，GIF 或影片需小於 500 MB', ignored: '已略過不支援的檔案',
-    maxFiles: '一次最多處理 30 個檔案', packageFailed: '打包失敗，請先單獨下載完成的檔案',
+    maxFiles: '一次最多處理 1000 個檔案', packageFailed: '打包失敗，請先單獨下載完成的檔案',
     dragMore: '放開即可繼續新增檔案', reprocessAll: '全部重新處理', donateTitle: '打賞作者',
     donateIntro: '這個工具會一直免費，如果它幫你省下空間和時間，可以隨意打賞。',
     donatePraises: [
@@ -206,18 +209,18 @@ export const I18N: Record<Locale, Messages> = {
   },
   en: {
     brandSubtitle: 'File Compression Lifesaver', outputPreferences: 'Output preferences', compressionLevel: 'Compression', extreme: 'Extreme', balanced: 'Balanced', lossless: 'Lossless', allQualities: 'Three qualities',
-    target100k: '≤ 100 KB (ID photos / profile photos)', target500k: '≤ 500 KB (ID scans / form files)', target2m: '≤ 2 MB (applications / résumés)', target5m: '≤ 5 MB (service files / contracts)', target10m: '≤ 10 MB (PDFs / long documents)', image: 'Images & PDF', video: 'Video', pdf: 'PDF', splittingPdf: 'Splitting PDF into pages', pdfSplitFailed: 'Could not convert PDF pages',
+    target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: 'Images & PDF', video: 'Video', pdf: 'PDF', splittingPdf: 'Splitting PDF into pages', pdfSplitFailed: 'Could not convert PDF pages',
     imageOriginal: 'Keep original format', original: 'Original', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV with alpha', extractMp3: 'Extract MP3', chooseDrop: 'Choose or drop files',
     releaseDrop: 'Release to add files', formats: 'JPG, PNG, WebP, AVIF, JXL, SVG, GIF, PDF and common video formats',
-    chooseFiles: 'Choose files', continueUpload: 'Add files', clear: 'Clear', packageDownload: 'Download ZIP', packageDownloaded: 'Downloaded', packageDownloadAgain: 'Download again',
+    chooseFiles: 'Choose files', continueUpload: 'Add files', clear: 'Clear', packageDownload: 'Download ZIP', packageDownloaded: 'Downloaded', packageDownloadAgain: 'Download again', packageMenuLabel: 'Choose ZIP quality', packageAllQualities: 'Download all', packageOnlyQuality: (quality) => `${quality} only`,
     zipping: 'Creating ZIP', files: (count) => `${count} file${count === 1 ? '' : 's'}`,
     processingCount: (count) => `Processing ${count}`, completedSummary: (count, saved) => `${count} completed${saved > 0 ? ` · ${saved}% smaller` : ''}`,
     imageKind: 'Image', videoKind: 'Video', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 results', waiting: 'Waiting', processing: 'Processing',
     failed: 'Failed', retry: 'Retry', download: 'Download', reveal: 'Show in folder', preview: 'Preview', closePreview: 'Close preview', resizePreview: 'Drag to resize preview height', previousPreview: 'Previous', nextPreview: 'Next', zoomOut: 'Zoom out', zoomReset: 'Reset to 1:1', zoomIn: 'Zoom in', zoomLevel: 'Choose zoom level', fitPreview: 'Show all', zoomHint: 'Use the buttons or = / - to adjust the preview', syncZoomHint: 'Zoom applies to all three previews', dragZoomHint: 'Drag or scroll to inspect all three in sync',
     unsupported: 'Choose JPG, PNG, WebP, AVIF, JXL, SVG, GIF, PDF or video files',
     tooLarge: 'Images and PDFs must be under 100 MB; GIF and video must be under 500 MB', ignored: 'Unsupported files were skipped',
-    maxFiles: 'Up to 30 files can be processed at once', packageFailed: 'ZIP creation failed. Download completed files individually.',
+    maxFiles: 'Up to 1,000 files can be processed at once', packageFailed: 'ZIP creation failed. Download completed files individually.',
     dragMore: 'Release to add more files', reprocessAll: 'Reprocess all', donateTitle: 'Support the author',
     donateIntro: 'This tool will always be free. If it saves you space and time, you’re welcome to leave any amount as a tip.',
     donatePraises: [
@@ -247,18 +250,18 @@ export const I18N: Record<Locale, Messages> = {
   },
   ja: {
     brandSubtitle: 'ファイル圧縮の救世主', outputPreferences: '出力設定', compressionLevel: '圧縮率', extreme: '極限', balanced: '標準', lossless: 'ロスレス', allQualities: '3種類を並行',
-    target100k: '≤ 100 KB（証明写真 / 登録写真）', target500k: '≤ 500 KB（身分証スキャン / フォーム添付）', target2m: '≤ 2 MB（応募書類 / 履歴書）', target5m: '≤ 5 MB（申請資料 / 契約書）', target10m: '≤ 10 MB（PDF / 長い資料）', image: '画像・PDF', video: '動画', pdf: 'PDF', splittingPdf: 'PDF をページごとに展開中', pdfSplitFailed: 'PDF ページの変換に失敗しました',
+    target100k: '≤ 100 KB', target500k: '≤ 500 KB', target2m: '≤ 2 MB', target5m: '≤ 5 MB', target10m: '≤ 10 MB', image: '画像・PDF', video: '動画', pdf: 'PDF', splittingPdf: 'PDF をページごとに展開中', pdfSplitFailed: 'PDF ページの変換に失敗しました',
     imageOriginal: '元の形式を保持', original: '元の形式', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: '透過 MOV', extractMp3: 'MP3 を抽出', chooseDrop: 'ファイルを選択またはドロップ',
     releaseDrop: '離して追加', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF、一般的な動画形式',
-    chooseFiles: 'ファイルを選択', continueUpload: 'さらに追加', clear: 'クリア', packageDownload: 'まとめてダウンロード', packageDownloaded: 'ダウンロード済み', packageDownloadAgain: 'もう一度ダウンロード',
+    chooseFiles: 'ファイルを選択', continueUpload: 'さらに追加', clear: 'クリア', packageDownload: 'まとめてダウンロード', packageDownloaded: 'ダウンロード済み', packageDownloadAgain: 'もう一度ダウンロード', packageMenuLabel: 'ZIP の品質を選択', packageAllQualities: 'すべてダウンロード', packageOnlyQuality: (quality) => `${quality}だけを保存`,
     zipping: 'ZIP 作成中', files: (count) => `${count} ファイル`, processingCount: (count) => `${count} 件を処理中`,
     completedSummary: (count, saved) => `${count} 件完了${saved > 0 ? ` · ${saved}% 削減` : ''}`,
     imageKind: '画像', videoKind: '動画', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '3 種類', waiting: '待機中', processing: '処理中',
     failed: '処理失敗', retry: '再試行', download: 'ダウンロード', reveal: 'フォルダーに表示', preview: 'プレビュー', closePreview: '閉じる', resizePreview: 'ドラッグしてプレビューの高さを調整', previousPreview: '前へ', nextPreview: '次へ', zoomOut: '縮小', zoomReset: '1:1 に戻す', zoomIn: '拡大', zoomLevel: 'ズーム倍率を選択', fitPreview: '全体表示', zoomHint: 'ボタンまたは = / - で表示倍率を調整', syncZoomHint: '3種類のプレビューを同時に拡大縮小', dragZoomHint: 'ドラッグまたはホイールで3種類を同期操作',
     unsupported: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF または動画を選択してください',
     tooLarge: '画像と PDF は 100 MB 未満、GIF と動画は 500 MB 未満にしてください', ignored: '未対応のファイルを除外しました',
-    maxFiles: '一度に最大 30 ファイルまで処理できます', packageFailed: 'ZIP 作成に失敗しました。完了したファイルを個別に保存してください。',
+    maxFiles: '一度に最大 1000 ファイルまで処理できます', packageFailed: 'ZIP 作成に失敗しました。完了したファイルを個別に保存してください。',
     dragMore: '離してファイルを追加', reprocessAll: 'すべて再処理', donateTitle: '作者を応援',
     donateIntro: 'このツールはずっと無料です。容量と時間の節約になったら、お好きな金額で応援していただけます。',
     donatePraises: [

@@ -1,4 +1,5 @@
 import {
+  CaretDown,
   Check,
   CheckCircle,
   Package,
@@ -28,12 +29,14 @@ import {
   baseName,
   blobFromDesktopData,
   classifyFile,
+  compressionFolderName,
   desktopFormatForJob,
   extensionOf,
   imageOutputExtension,
   originalImageFormat,
   outputLabelFromName,
   packageName,
+  qualityLabel,
   type CompressionSelection,
   type ImageOutputPreference,
   type JobKind,
@@ -60,10 +63,22 @@ import {
   type Theme,
 } from './i18n'
 
-const MAX_FILES = 30
+const MAX_FILES = 1000
 const MAX_IMAGE_BYTES = 100 * 1024 * 1024
 const MAX_MEDIA_BYTES = 500 * 1024 * 1024
 const MAX_PDF_BYTES = 100 * 1024 * 1024
+const PREVIEW_HEIGHT_STORAGE_KEY = 'compreesor-preview-height'
+
+type PackageSelection = QualityPreset | 'all'
+
+function getStoredPreviewHeight() {
+  try {
+    const height = Number(window.localStorage.getItem(PREVIEW_HEIGHT_STORAGE_KEY))
+    return Number.isFinite(height) && height >= 220 ? height : null
+  } catch {
+    return null
+  }
+}
 
 function waitFor(target: EventTarget, eventName: string, timeout = 6000) {
   return new Promise<void>((resolve, reject) => {
@@ -158,11 +173,15 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [isZipping, setIsZipping] = useState(false)
   const [packageDownloadState, setPackageDownloadState] = useState<'idle' | 'downloaded' | 'again'>('idle')
+  const [packageMenuOpen, setPackageMenuOpen] = useState(false)
   const [usageGuideOpen, setUsageGuideOpen] = useState(false)
   const [cliGuideOpen, setCliGuideOpen] = useState(false)
   const [toast, setToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null)
   const [hoveredPreviewJobId, setHoveredPreviewJobId] = useState<string | null>(null)
   const [pinnedPreviewJobId, setPinnedPreviewJobId] = useState<string | null>(null)
+  const [renderedPreviewJobId, setRenderedPreviewJobId] = useState<string | null>(null)
+  const [previewExiting, setPreviewExiting] = useState(false)
+  const [previewHeight, setPreviewHeight] = useState<number | null>(getStoredPreviewHeight)
   const [reprocessVisible, setReprocessVisible] = useState(false)
   const [reprocessReady, setReprocessReady] = useState(false)
   const [compressionPreset, setCompressionPreset] = useState<CompressionSelection>('all')
@@ -178,6 +197,8 @@ function App() {
   const footerRef = useRef<SiteFooterHandle>(null)
   const toastTimerRef = useRef<number | null>(null)
   const packageDownloadTimerRef = useRef<number | null>(null)
+  const packageMenuRef = useRef<HTMLDivElement>(null)
+  const previewExitTimerRef = useRef<number | null>(null)
   const messages = I18N[locale]
   const currentLanguage = LANGUAGE_OPTIONS.find((option) => option.id === locale) ?? LANGUAGE_OPTIONS[0]
 
@@ -200,7 +221,26 @@ function App() {
       packageDownloadTimerRef.current = null
     }
     setPackageDownloadState('idle')
+    setPackageMenuOpen(false)
   }, [])
+
+  useEffect(() => {
+    if (!packageMenuOpen) return
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (event.target instanceof Node && !packageMenuRef.current?.contains(event.target)) {
+        setPackageMenuOpen(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPackageMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePress)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePress)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [packageMenuOpen])
 
   const copyCliInstallCommand = useCallback(async () => {
     try {
@@ -226,6 +266,7 @@ function App() {
     return () => {
       if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
       if (packageDownloadTimerRef.current !== null) window.clearTimeout(packageDownloadTimerRef.current)
+      if (previewExitTimerRef.current !== null) window.clearTimeout(previewExitTimerRef.current)
       imagePoolRef.current?.dispose()
       disposeLoadedMediaEngine()
       urls.forEach((url) => URL.revokeObjectURL(url))
@@ -789,12 +830,38 @@ function App() {
     () => jobs.filter((job) => job.status === 'done' && job.resultBlob && job.resultUrl && job.outputName),
     [jobs],
   )
+  const hasQualityPackages = completedJobs.some((job) => job.variants.length > 1)
   const previewableJobs = useMemo(
     () => jobs.filter((job) => job.status === 'done' && job.resultUrl),
     [jobs],
   )
   const activePreviewJobId = pinnedPreviewJobId ?? hoveredPreviewJobId
   const previewJob = previewableJobs.find((job) => job.id === activePreviewJobId) ?? null
+  const activePreviewRenderId = previewJob?.id ?? null
+  const retainedPreviewJob = previewableJobs.find((job) => job.id === renderedPreviewJobId) ?? null
+  const renderedPreviewJob = previewJob ?? retainedPreviewJob
+
+  useEffect(() => {
+    if (previewExitTimerRef.current !== null) {
+      window.clearTimeout(previewExitTimerRef.current)
+      previewExitTimerRef.current = null
+    }
+    if (activePreviewRenderId) {
+      setRenderedPreviewJobId(activePreviewRenderId)
+      setPreviewExiting(false)
+      return
+    }
+    if (!renderedPreviewJobId) {
+      setPreviewExiting(false)
+      return
+    }
+    setPreviewExiting(true)
+    previewExitTimerRef.current = window.setTimeout(() => {
+      setRenderedPreviewJobId(null)
+      setPreviewExiting(false)
+      previewExitTimerRef.current = null
+    }, 180)
+  }, [activePreviewRenderId, renderedPreviewJobId])
 
   const pinPreview = useCallback((jobId: string) => {
     setPinnedPreviewJobId(jobId)
@@ -804,6 +871,16 @@ function App() {
   const closePreview = useCallback(() => {
     setHoveredPreviewJobId(null)
     setPinnedPreviewJobId(null)
+  }, [])
+
+  const rememberPreviewHeight = useCallback((height: number) => {
+    const nextHeight = Math.round(height)
+    setPreviewHeight(nextHeight)
+    try {
+      window.localStorage.setItem(PREVIEW_HEIGHT_STORAGE_KEY, String(nextHeight))
+    } catch {
+      // The current session still keeps the shared height when storage is unavailable.
+    }
   }, [])
 
   const clearPreviewSelectionFromBlank = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -900,7 +977,7 @@ function App() {
     download(resultUrl, outputName)
   }, [messages.failed])
 
-  const downloadAll = useCallback(async () => {
+  const downloadAll = useCallback(async (packageSelection: PackageSelection = 'all') => {
     if (completedJobs.length === 0 || isProcessing || isZipping) return
     if (packageDownloadTimerRef.current !== null) {
       window.clearTimeout(packageDownloadTimerRef.current)
@@ -911,30 +988,44 @@ function App() {
     try {
       const names = new Map<string, number>()
       const entries: Array<{ name: string; blob: Blob }> = []
+      const includedJobIds = new Set<string>()
       for (const job of completedJobs) {
         const available = job.variants.length > 0 ? job.variants : []
         const selected = available.length > 0
-          ? available
-          : [{ blob: job.resultBlob!, outputName: job.outputName ?? `${baseName(job.file.name)}-压缩` }]
+          ? packageSelection === 'all'
+            ? available
+            : available.filter((variant) => variant.preset === packageSelection)
+          : packageSelection === 'all' || job.preferences.compressionPreset === packageSelection
+            ? [{
+              blob: job.resultBlob!,
+              outputName: job.outputName ?? `${baseName(job.file.name)}-压缩`,
+              preset: job.preferences.compressionPreset,
+              }]
+            : []
         for (const variant of selected) {
+          const folderName = compressionFolderName(variant.preset, messages)
           const desiredName = variant.outputName
-          const count = names.get(desiredName) ?? 0
-          names.set(desiredName, count + 1)
+          const desiredPath = `${folderName}/${desiredName}`
+          const count = names.get(desiredPath) ?? 0
+          names.set(desiredPath, count + 1)
           const dot = desiredName.lastIndexOf('.')
           const uniqueName = count === 0
             ? desiredName
             : dot > 0
               ? `${desiredName.slice(0, dot)}-${count + 1}${desiredName.slice(dot)}`
               : `${desiredName}-${count + 1}`
-          entries.push({ name: uniqueName, blob: variant.blob })
+          entries.push({ name: `${folderName}/${uniqueName}`, blob: variant.blob })
+          includedJobIds.add(job.id)
         }
       }
+
+      if (entries.length === 0) throw new Error('No matching files to package')
 
       const blob = await createStoredZip(entries, (completed, total) => {
         setNotice(`正在打包 · ${completed}/${total}`)
       })
       const url = URL.createObjectURL(blob)
-      download(url, packageName(completedJobs))
+      download(url, packageName(completedJobs.filter((job) => includedJobIds.has(job.id))))
       window.setTimeout(() => URL.revokeObjectURL(url), 1500)
       setNotice(null)
       setPackageDownloadState('downloaded')
@@ -948,15 +1039,16 @@ function App() {
     } finally {
       setIsZipping(false)
     }
-  }, [completedJobs, isProcessing, isZipping, messages.packageFailed])
+  }, [completedJobs, isProcessing, isZipping, messages])
 
-  const startPackageDownload = useCallback(() => {
-    void downloadAll()
+  const startPackageDownload = useCallback((packageSelection: PackageSelection = 'all') => {
+    setPackageMenuOpen(false)
+    void downloadAll(packageSelection)
   }, [downloadAll])
 
   return (
     <div
-      className={`app-shell${jobs.length > 0 ? ' has-jobs' : ''}`}
+      className={`app-shell${jobs.length > 0 ? ' has-jobs' : ''}${renderedPreviewJob ? ' has-preview' : ''}`}
       onPointerDown={clearPreviewSelectionFromBlank}
     >
       <TopBar
@@ -973,9 +1065,10 @@ function App() {
       <main id="top" className="workspace">
         <section className="tool-panel" aria-labelledby="page-title">
           <input
-          ref={inputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/avif,image/svg+xml,.jxl,image/gif,application/pdf,.pdf,video/*,.mov,.m4v,.mkv,.avi,.mpeg,.mpg"
+            ref={inputRef}
+            type="file"
+            data-file-limit={MAX_FILES}
+            accept="image/jpeg,image/png,image/webp,image/avif,image/svg+xml,.jxl,image/gif,application/pdf,.pdf,video/*,.mov,.m4v,.mkv,.avi,.mpeg,.mpg"
             multiple
             hidden
             onChange={(event) => {
@@ -1062,30 +1155,60 @@ function App() {
                     <Plus size={16} weight="bold" />{messages.continueUpload}
                   </button>
                   {!isProcessing && completedJobs.length > 0 ? (
-                    <button
-                      className={`download-all${packageDownloadState !== 'idle' ? ' has-downloaded' : ''}${packageDownloadState === 'downloaded' ? ' is-downloaded' : ''}${packageDownloadState === 'again' ? ' is-download-again' : ''}`}
-                      type="button"
-                      onClick={startPackageDownload}
-                      disabled={isZipping || packageDownloadState === 'downloaded'}
-                      aria-busy={isZipping}
+                    <div
+                      className={`package-download-control${hasQualityPackages ? ' has-menu' : ''}${packageDownloadState === 'downloaded' ? ' is-downloaded' : ''}${packageDownloadState === 'again' ? ' is-download-again' : ''}`}
+                      ref={packageMenuRef}
                     >
-                      {isZipping ? (
-                        <SpinnerGap className="spin" size={17} />
-                      ) : packageDownloadState === 'downloaded' ? (
-                        <Check size={17} weight="bold" />
-                      ) : (
-                        <Package size={17} weight="bold" />
-                      )}
-                      <span aria-live="polite">
-                        {isZipping
-                          ? messages.zipping
-                          : packageDownloadState === 'downloaded'
-                            ? messages.packageDownloaded
-                            : packageDownloadState === 'again'
-                              ? messages.packageDownloadAgain
-                              : messages.packageDownload}
-                      </span>
-                    </button>
+                      <button
+                        className={`download-all${packageDownloadState !== 'idle' ? ' has-downloaded' : ''}${packageDownloadState === 'downloaded' ? ' is-downloaded' : ''}${packageDownloadState === 'again' ? ' is-download-again' : ''}`}
+                        type="button"
+                        onClick={() => startPackageDownload('all')}
+                        disabled={isZipping || packageDownloadState === 'downloaded'}
+                        aria-busy={isZipping}
+                      >
+                        {isZipping ? (
+                          <SpinnerGap className="spin" size={17} />
+                        ) : packageDownloadState === 'downloaded' ? (
+                          <Check size={17} weight="bold" />
+                        ) : (
+                          <Package size={17} weight="bold" />
+                        )}
+                        <span aria-live="polite">
+                          {isZipping
+                            ? messages.zipping
+                            : packageDownloadState === 'downloaded'
+                              ? messages.packageDownloaded
+                              : packageDownloadState === 'again'
+                                ? messages.packageDownloadAgain
+                                : messages.packageDownload}
+                        </span>
+                      </button>
+                      {hasQualityPackages ? (
+                        <>
+                          <button
+                            className="package-menu-toggle"
+                            type="button"
+                            aria-label={messages.packageMenuLabel}
+                            aria-haspopup="menu"
+                            aria-expanded={packageMenuOpen}
+                            onClick={() => setPackageMenuOpen((open) => !open)}
+                            disabled={isZipping || packageDownloadState === 'downloaded'}
+                          >
+                            <CaretDown size={13} weight="bold" />
+                          </button>
+                          {packageMenuOpen ? (
+                            <div className="package-download-menu" role="menu" aria-label={messages.packageMenuLabel}>
+                              <button type="button" role="menuitem" onClick={() => startPackageDownload('all')}>{messages.packageAllQualities}</button>
+                              {QUALITY_PRESETS.map((preset) => (
+                                <button type="button" role="menuitem" key={preset} onClick={() => startPackageDownload(preset)}>
+                                  {messages.packageOnlyQuality(qualityLabel(preset, messages))}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -1121,15 +1244,18 @@ function App() {
         </div>
       )}
 
-      {previewJob && previewJob.resultUrl ? (
+      {renderedPreviewJob && renderedPreviewJob.resultUrl ? (
         <PreviewPanel
-          job={previewJob}
+          job={renderedPreviewJob}
           jobs={previewableJobs}
           messages={messages}
-          pinned={pinnedPreviewJobId === previewJob.id}
+          rememberedHeight={previewHeight}
+          pinned={!previewExiting && pinnedPreviewJobId === renderedPreviewJob.id}
+          exiting={previewExiting}
           onClose={closePreview}
           onSelect={pinPreview}
           onDownload={downloadJob}
+          onHeightChange={rememberPreviewHeight}
         />
       ) : null}
 

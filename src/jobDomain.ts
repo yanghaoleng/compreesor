@@ -152,6 +152,23 @@ export function qualityLabel(preset: QualityPreset, messages: Messages) {
   return messages.lossless
 }
 
+export function compressionFolderName(preset: CompressionPreset, messages: Messages) {
+  if (preset === 'extreme' || preset === 'balanced' || preset === 'lossless') {
+    return qualityLabel(preset, messages)
+  }
+
+  const targetLabel = preset === 'target-100k'
+    ? messages.target100k
+    : preset === 'target-500k'
+      ? messages.target500k
+      : preset === 'target-2m'
+        ? messages.target2m
+        : preset === 'target-5m'
+          ? messages.target5m
+          : messages.target10m
+  return targetLabel.split(/\s*[（(]/, 1)[0].trim()
+}
+
 export function statusText(job: MediaJob, messages: Messages) {
   if (job.status === 'queued') return messages.waiting
   if (job.status === 'processing') return job.stage

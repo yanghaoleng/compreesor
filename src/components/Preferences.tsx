@@ -1,6 +1,7 @@
 import type { VideoOutputPreference } from '../mediaCompressor'
 import type { CompressionSelection, ImageOutputPreference } from '../jobDomain'
 import type { Messages } from '../i18n'
+import { CustomSelect } from './CustomSelect'
 
 type PreferencesProps = {
   messages: Messages
@@ -27,43 +28,62 @@ export function Preferences({
   reprocessDisabled,
   onReprocess,
 }: PreferencesProps) {
+  const compressionOptions: Array<{ value: CompressionSelection; label: string }> = [
+    { value: 'all', label: messages.allQualities },
+    { value: 'extreme', label: messages.extreme },
+    { value: 'balanced', label: messages.balanced },
+    { value: 'lossless', label: messages.lossless },
+    { value: 'target-100k', label: messages.target100k },
+    { value: 'target-500k', label: messages.target500k },
+    { value: 'target-2m', label: messages.target2m },
+    { value: 'target-5m', label: messages.target5m },
+    { value: 'target-10m', label: messages.target10m },
+  ]
+  const imageOptions: Array<{ value: ImageOutputPreference; label: string }> = [
+    { value: 'original', label: messages.imageOriginal },
+    { value: 'jpeg', label: messages.jpg },
+    { value: 'webp', label: messages.webp },
+    { value: 'png', label: messages.png },
+    { value: 'pdf', label: messages.pdf },
+  ]
+  const videoOptions: Array<{ value: VideoOutputPreference; label: string }> = [
+    { value: 'original', label: messages.original },
+    { value: 'mp4', label: messages.mp4 },
+    { value: 'mov', label: messages.mov },
+    { value: 'mov-alpha', label: messages.movAlpha },
+    { value: 'mp3', label: messages.extractMp3 },
+  ]
+
   return (
     <section className="preferences" aria-labelledby="page-title">
       <h1 id="page-title">{messages.outputPreferences}</h1>
-      <label>
+      <div className="preference-field preference-compression">
         <span>{messages.compressionLevel}</span>
-        <select value={compressionPreset} onChange={(event) => onCompressionPresetChange(event.target.value as CompressionSelection)}>
-          <option value="all">{messages.allQualities}</option>
-          <option value="extreme">{messages.extreme}</option>
-          <option value="balanced">{messages.balanced}</option>
-          <option value="lossless">{messages.lossless}</option>
-          <option value="target-100k">{messages.target100k}</option>
-          <option value="target-500k">{messages.target500k}</option>
-          <option value="target-2m">{messages.target2m}</option>
-          <option value="target-5m">{messages.target5m}</option>
-          <option value="target-10m">{messages.target10m}</option>
-        </select>
-      </label>
-      <label>
+        <CustomSelect
+          value={compressionPreset}
+          options={compressionOptions}
+          onChange={onCompressionPresetChange}
+          ariaLabel={messages.compressionLevel}
+        />
+      </div>
+      <div className="preference-field preference-image">
         <span>{messages.image}</span>
-        <select value={imageOutput} onChange={(event) => onImageOutputChange(event.target.value as ImageOutputPreference)}>
-          <option value="original">{messages.imageOriginal}</option>
-          <option value="jpeg">{messages.jpg}</option>
-          <option value="webp">{messages.webp}</option>
-          <option value="png">{messages.png}</option>
-          <option value="pdf">{messages.pdf}</option>
-        </select>
-      </label>
-      <label>
+        <CustomSelect
+          value={imageOutput}
+          options={imageOptions}
+          onChange={onImageOutputChange}
+          ariaLabel={messages.image}
+        />
+      </div>
+      <div className="preference-field preference-video">
         <span>{messages.video}</span>
-        <select value={videoOutput} onChange={(event) => onVideoOutputChange(event.target.value as VideoOutputPreference)}>
-          <option value="original">{messages.original}</option>
-          <option value="mp4">{messages.mp4}</option>
-          <option value="mov">{messages.mov}</option>
-          <option value="mov-alpha">{messages.movAlpha}</option>
-          <option value="mp3">{messages.extractMp3}</option>
-        </select>
-      </label>
+        <CustomSelect
+          value={videoOutput}
+          options={videoOptions}
+          onChange={onVideoOutputChange}
+          ariaLabel={messages.video}
+        />
+      </div>
       {showReprocess ? (
         <button className="reprocess-all" type="button" onClick={onReprocess} disabled={reprocessDisabled}>
           {messages.reprocessAll}

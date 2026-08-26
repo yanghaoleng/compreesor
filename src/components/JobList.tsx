@@ -19,7 +19,7 @@ import {
 } from '../jobDomain'
 import type { Locale } from '../i18n'
 import type { QualityPreset } from '../types'
-import { AnimatedPercentage, AnimatedPercentageRange } from './AnimatedText'
+import { AnimatedPercentage } from './AnimatedText'
 
 type JobListProps = {
   jobs: MediaJob[]
@@ -91,10 +91,6 @@ export function JobList({
       {jobs.map((job) => {
         const outputBytes = job.resultBlob?.size ?? 0
         const outputRatio = outputBytes > 0 ? Math.round((outputBytes / job.file.size) * 100) : 0
-        const extremeVariant = job.variants.find((variant) => variant.preset === 'extreme')
-        const losslessVariant = job.variants.find((variant) => variant.preset === 'lossless')
-        const extremeRatio = extremeVariant ? Math.round((extremeVariant.blob.size / job.file.size) * 100) : 0
-        const losslessRatio = losslessVariant ? Math.round((losslessVariant.blob.size / job.file.size) * 100) : 0
 
         return (
           <article
@@ -166,7 +162,12 @@ export function JobList({
                     key={variant.preset}
                   >
                     <b>{qualityLabel(variant.preset as QualityPreset, messages)}</b>
-                    <small>{formatBytes(variant.blob.size)}</small>
+                    <small>
+                      <span className="variant-size">{formatBytes(variant.blob.size)}</span>
+                      <span className="variant-ratio">
+                        {job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0}%
+                      </span>
+                    </small>
                   </div>
                 ))}
               </div>
@@ -185,15 +186,13 @@ export function JobList({
                   <span>{job.progress}%</span>
                 </span>
               ) : null}
-              {job.status === 'done' ? (
+              {job.status === 'done' && job.variants.length <= 1 ? (
                 <>
                   <CheckCircle size={18} weight="fill" />
                   <span title={job.outputLabel ?? undefined}>
-                    {job.allQualities && extremeVariant && losslessVariant
-                      ? <AnimatedPercentageRange from={extremeRatio} to={losslessRatio} />
-                      : job.kind === 'image' || job.kind === 'pdf'
-                        ? <AnimatedPercentage value={outputRatio} />
-                        : job.outputLabel}
+                    {job.kind === 'image' || job.kind === 'pdf'
+                      ? <AnimatedPercentage value={outputRatio} />
+                      : job.outputLabel}
                   </span>
                 </>
               ) : null}
