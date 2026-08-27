@@ -39,9 +39,6 @@ export type Messages = {
   chooseDrop: string
   releaseDrop: string
   formats: string
-  chooseFiles: string
-  chooseFolder: string
-  continueUpload: string
   clear: string
   packageDownload: string
   packageDownloaded: string
@@ -147,7 +144,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: '保持原格式', original: '原格式', originalFile: '原始文件', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '选择或拖入文件',
     releaseDrop: '松开即可添加', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 和常见视频',
-    chooseFiles: '选择文件', chooseFolder: '选择文件夹', continueUpload: '继续上传', clear: '清空', packageDownload: '打包下载', packageDownloaded: '已下载', packageDownloadAgain: '再次下载', packageDownloadQuality: (quality) => `打包下载 · ${quality}`, packageMenuLabel: '选择打包档位', packageAllQualities: '全部下载', packageOnlyQuality: (quality) => `只打包${quality}`, packageSaved: (saved) => `省${saved}%`,
+    clear: '清空', packageDownload: '打包下载', packageDownloaded: '已下载', packageDownloadAgain: '再次下载', packageDownloadQuality: (quality) => `打包下载 · ${quality}`, packageMenuLabel: '选择打包档位', packageAllQualities: '全部下载', packageOnlyQuality: (quality) => `只打包${quality}`, packageSaved: (saved) => `省${saved}%`,
     zipping: '正在打包', files: (count) => `${count} 个文件`, processingCount: (count) => `正在处理 ${count} 个`,
     completedSummary: (count, saved) => `${count} 个已完成${saved > 0 ? ` · 节省 ${saved}%` : ''}`, completedCount: (count) => `${count} 个已完成`, savedShort: '省',
     imageKind: '图片', videoKind: '视频', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '2 份', waiting: '等待处理', processing: '正在处理',
@@ -189,7 +186,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: '保持原格式', original: '原格式', originalFile: '原始檔案', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV 透明通道', extractMp3: '提取 MP3', chooseDrop: '選擇或拖入檔案',
     releaseDrop: '放開即可新增', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF 與常見影片',
-    chooseFiles: '選擇檔案', chooseFolder: '選擇資料夾', continueUpload: '繼續上傳', clear: '清空', packageDownload: '打包下載', packageDownloaded: '已下載', packageDownloadAgain: '再次下載', packageDownloadQuality: (quality) => `打包下載 · ${quality}`, packageMenuLabel: '選擇打包檔位', packageAllQualities: '全部下載', packageOnlyQuality: (quality) => `只打包${quality}`, packageSaved: (saved) => `省${saved}%`,
+    clear: '清空', packageDownload: '打包下載', packageDownloaded: '已下載', packageDownloadAgain: '再次下載', packageDownloadQuality: (quality) => `打包下載 · ${quality}`, packageMenuLabel: '選擇打包檔位', packageAllQualities: '全部下載', packageOnlyQuality: (quality) => `只打包${quality}`, packageSaved: (saved) => `省${saved}%`,
     zipping: '正在打包', files: (count) => `${count} 個檔案`, processingCount: (count) => `正在處理 ${count} 個`,
     completedSummary: (count, saved) => `${count} 個已完成${saved > 0 ? ` · 節省 ${saved}%` : ''}`, completedCount: (count) => `${count} 個已完成`, savedShort: '省',
     imageKind: '圖片', videoKind: '影片', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '2 份', waiting: '等待處理', processing: '正在處理',
@@ -231,7 +228,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: 'Keep original format', original: 'Original', originalFile: 'Original file', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: 'MOV with alpha', extractMp3: 'Extract MP3', chooseDrop: 'Choose or drop files',
     releaseDrop: 'Release to add files', formats: 'JPG, PNG, WebP, AVIF, JXL, SVG, GIF, PDF and common video formats',
-    chooseFiles: 'Choose files', chooseFolder: 'Choose folder', continueUpload: 'Add files', clear: 'Clear', packageDownload: 'Download ZIP', packageDownloaded: 'Downloaded', packageDownloadAgain: 'Download again', packageDownloadQuality: (quality) => `Download ZIP · ${quality}`, packageMenuLabel: 'Choose ZIP quality', packageAllQualities: 'Download all', packageOnlyQuality: (quality) => `${quality} only`, packageSaved: (saved) => `${saved}% saved`,
+    clear: 'Clear', packageDownload: 'Download ZIP', packageDownloaded: 'Downloaded', packageDownloadAgain: 'Download again', packageDownloadQuality: (quality) => `Download ZIP · ${quality}`, packageMenuLabel: 'Choose ZIP quality', packageAllQualities: 'Download all', packageOnlyQuality: (quality) => `${quality} only`, packageSaved: (saved) => `${saved}% saved`,
     zipping: 'Creating ZIP', files: (count) => `${count} file${count === 1 ? '' : 's'}`,
     processingCount: (count) => `Processing ${count}`, completedSummary: (count, saved) => `${count} completed${saved > 0 ? ` · ${saved}% smaller` : ''}`, completedCount: (count) => `${count} completed`, savedShort: 'save',
     imageKind: 'Image', videoKind: 'Video', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '2 results', waiting: 'Waiting', processing: 'Processing',
@@ -273,7 +270,7 @@ export const I18N: Record<Locale, Messages> = {
     imageOriginal: '元の形式を保持', original: '元の形式', originalFile: '元ファイル', jpg: 'JPG', webp: 'WebP', png: 'PNG', mp4: 'MP4', mov: 'MOV',
     movAlpha: '透過 MOV', extractMp3: 'MP3 を抽出', chooseDrop: 'ファイルを選択またはドロップ',
     releaseDrop: '離して追加', formats: 'JPG、PNG、WebP、AVIF、JXL、SVG、GIF、PDF、一般的な動画形式',
-    chooseFiles: 'ファイルを選択', chooseFolder: 'フォルダーを選択', continueUpload: 'さらに追加', clear: 'クリア', packageDownload: 'まとめてダウンロード', packageDownloaded: 'ダウンロード済み', packageDownloadAgain: 'もう一度ダウンロード', packageDownloadQuality: (quality) => `ZIP 作成 · ${quality}`, packageMenuLabel: 'ZIP の品質を選択', packageAllQualities: 'すべてダウンロード', packageOnlyQuality: (quality) => `${quality}だけを保存`, packageSaved: (saved) => `${saved}%削減`,
+    clear: 'クリア', packageDownload: 'まとめてダウンロード', packageDownloaded: 'ダウンロード済み', packageDownloadAgain: 'もう一度ダウンロード', packageDownloadQuality: (quality) => `ZIP 作成 · ${quality}`, packageMenuLabel: 'ZIP の品質を選択', packageAllQualities: 'すべてダウンロード', packageOnlyQuality: (quality) => `${quality}だけを保存`, packageSaved: (saved) => `${saved}%削減`,
     zipping: 'ZIP 作成中', files: (count) => `${count} ファイル`, processingCount: (count) => `${count} 件を処理中`,
     completedSummary: (count, saved) => `${count} 件完了${saved > 0 ? ` · ${saved}% 削減` : ''}`, completedCount: (count) => `${count} 件完了`, savedShort: '削減',
     imageKind: '画像', videoKind: '動画', gifKind: 'GIF', pdfKind: 'PDF', threeResults: '2 種類', waiting: '待機中', processing: '処理中',

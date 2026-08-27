@@ -144,23 +144,6 @@
   font-weight: 700;
 }
 
-.add-more-button,
-.folder-upload-button {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 10px;
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
-  font-size: 11px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -375,49 +358,6 @@
 
 :root[data-theme='dark'] .drop-zone {
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
-}
-
-.drop-zone-actions {
-  margin-top: 19px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.select-button {
-  min-height: 42px;
-  padding: 0 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: white;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: #083a8e;
-  font-size: 13px;
-  font-weight: 800;
-  box-shadow: 0 8px 20px rgba(8, 58, 142, 0.2);
-  cursor: pointer;
-  transition: transform 180ms ease, border-color 160ms ease, background-color 160ms ease;
-}
-
-.select-button:hover {
-  transform: translateY(-2px);
-}
-
-.select-button.is-secondary {
-  color: var(--primary);
-  border-color: color-mix(in srgb, var(--primary) 28%, var(--line));
-  background: var(--surface);
-  box-shadow: none;
-}
-
-.select-button.is-secondary:hover {
-  border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
-  background: color-mix(in srgb, var(--surface) 86%, var(--blue-soft));
 }
 
 .notice {
@@ -1165,9 +1105,7 @@
   transform: translateY(-1px);
 }
 
-.clear-button:not(:disabled):hover,
-.add-more-button:not(:disabled):hover,
-.folder-upload-button:not(:disabled):hover {
+.clear-button:not(:disabled):hover {
   border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
   background: color-mix(in srgb, var(--surface) 88%, var(--blue-soft));
   box-shadow: 0 5px 14px color-mix(in srgb, var(--primary) 8%, transparent);
@@ -2549,10 +2487,6 @@
     padding-inline: 8px;
   }
 
-  .add-more-button {
-    padding-inline: 8px;
-  }
-
   .queue-controls {
     flex-wrap: nowrap;
     gap: 3px;
@@ -2566,16 +2500,6 @@
 
   .queue-controls button svg {
     display: none;
-  }
-
-  .queue-controls .folder-upload-button {
-    width: 32px;
-    padding-inline: 0;
-    font-size: 0;
-  }
-
-  .queue-controls .folder-upload-button svg {
-    display: block;
   }
 
   .queue-controls .package-menu-toggle > svg {

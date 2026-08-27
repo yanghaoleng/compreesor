@@ -1,6 +1,6 @@
 import { _electron as electron } from 'playwright'
 import { PDFDocument } from 'pdf-lib'
-import { copyFile, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -9,13 +9,7 @@ const executablePath = join(appDirectory, 'node_modules/electron/dist/Electron.a
 const directory = await mkdtemp(join(tmpdir(), 'compreesor-electron-e2e-'))
 const sourcePath = join(directory, 'desktop.svg')
 const pdfPath = join(directory, 'desktop-pages.pdf')
-const folderDirectory = join(directory, 'folder-input')
-const nestedFolderDirectory = join(folderDirectory, 'nested')
-await mkdir(nestedFolderDirectory, { recursive: true })
 await copyFile('tests/fixture.svg', sourcePath)
-await copyFile('tests/fixture.svg', join(folderDirectory, 'folder-vector.svg'))
-await copyFile('docs/assets/robot-paper-icon-source.png', join(nestedFolderDirectory, 'folder-image.png'))
-await writeFile(join(folderDirectory, 'ignored.txt'), 'unsupported')
 const pdf = await PDFDocument.create()
 const icon = await pdf.embedPng(await readFile('docs/assets/robot-paper-icon-source.png'))
 for (let index = 0; index < 2; index += 1) {
@@ -36,6 +30,7 @@ try {
   await window.locator('.preferences').waitFor()
   if ((await window.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompressor Studio') throw new Error('Electron brand is out of sync')
   if (await window.locator('.preferences select').first().inputValue() !== 'all') throw new Error('Electron should default to all qualities')
+  if (await window.locator('.drop-zone button, .drop-zone [role="button"]').count()) throw new Error('Electron drop zone should not show a file-picker button')
   await window.locator('.file-picker-input').setInputFiles(sourcePath)
   await window.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
   const files = await readdir(directory)
@@ -72,14 +67,7 @@ try {
     if (!convertedFiles.includes(name) || (await stat(join(directory, name))).size === 0) throw new Error(`Electron did not save ${name}`)
   }
 
-  await window.getByRole('button', { name: '清空' }).click()
-  if (await window.locator('.folder-picker-input').getAttribute('webkitdirectory') !== '') throw new Error('Electron folder picker is missing webkitdirectory')
-  await window.locator('.folder-picker-input').setInputFiles(folderDirectory)
-  await window.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 2, undefined, { timeout: 120_000 })
-  const folderNames = await window.locator('.job-copy strong').allInnerTexts()
-  if (!folderNames.includes('folder-vector.svg') || !folderNames.includes('folder-image.png')) throw new Error(`Electron folder import is incomplete: ${folderNames.join(' | ')}`)
-  if (await window.locator('.job-row.status-error').count()) throw new Error('Electron folder import created an error job')
-  console.log('Electron shared UI, synchronized comparison, folder import and PDF page persistence passed')
+  console.log('Electron shared UI, synchronized comparison and PDF page persistence passed')
 } finally {
   await app.close()
 }

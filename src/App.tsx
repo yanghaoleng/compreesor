@@ -3,9 +3,7 @@ import {
   Check,
   CheckCircle,
   DownloadSimple,
-  FolderOpen,
   Package,
-  Plus,
   SpinnerGap,
   Trash,
   UploadSimple,
@@ -197,7 +195,6 @@ function App() {
   const jobsRef = useRef<MediaJob[]>([])
   const urlsRef = useRef(new Set<string>())
   const inputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepthRef = useRef(0)
   const footerRef = useRef<SiteFooterHandle>(null)
   const toastTimerRef = useRef<number | null>(null)
@@ -1144,25 +1141,6 @@ function App() {
               event.target.value = ''
             }}
           />
-          <input
-            ref={(node) => {
-              folderInputRef.current = node
-              if (!node) return
-              node.setAttribute('webkitdirectory', '')
-              node.setAttribute('directory', '')
-            }}
-            className="folder-picker-input"
-            type="file"
-            data-file-limit={MAX_FILES}
-            accept={ACCEPTED_FILE_TYPES}
-            multiple
-            hidden
-            onChange={(event) => {
-              void addFiles(Array.from(event.target.files ?? []))
-              event.target.value = ''
-            }}
-          />
-
           <Preferences
             messages={messages}
             compressionPreset={compressionPreset}
@@ -1201,14 +1179,6 @@ function App() {
                 <span className="drop-icon"><UploadSimple size={31} weight="bold" /></span>
                 <h2>{isDragging ? messages.releaseDrop : messages.chooseDrop}</h2>
                 <p>{messages.formats}</p>
-                <div className="drop-zone-actions">
-                  <button className="select-button" type="button" onClick={() => inputRef.current?.click()}>
-                    <UploadSimple size={16} weight="bold" />{messages.chooseFiles}
-                  </button>
-                  <button className="select-button is-secondary" type="button" onClick={() => folderInputRef.current?.click()}>
-                    <FolderOpen size={16} weight="bold" />{messages.chooseFolder}
-                  </button>
-                </div>
               </div>
           )}
 
@@ -1252,18 +1222,6 @@ function App() {
                 <div className="queue-controls">
                   <button className="clear-button" type="button" onClick={clearAll} disabled={isProcessing}>
                     <Trash size={16} />{messages.clear}
-                  </button>
-                  <button className="add-more-button" type="button" onClick={() => inputRef.current?.click()}>
-                    <Plus size={16} weight="bold" />{messages.continueUpload}
-                  </button>
-                  <button
-                    className="folder-upload-button"
-                    type="button"
-                    onClick={() => folderInputRef.current?.click()}
-                    aria-label={messages.chooseFolder}
-                    title={messages.chooseFolder}
-                  >
-                    <FolderOpen size={16} weight="bold" />{messages.chooseFolder}
                   </button>
                   {!isProcessing && completedJobs.length > 0 ? (
                     <div

@@ -30,9 +30,7 @@ if (toolPanelPadding.top !== 14 || toolPanelPadding.bottom !== 14 || toolPanelPa
 }
 if (await page.getByRole('heading', { name: '输出偏好' }).count()) throw new Error('The output-preferences heading should be removed')
 if (await page.locator('.file-picker-input').getAttribute('data-file-limit') !== '1000') throw new Error('A single file intake should allow up to 1,000 files')
-if (await page.locator('.folder-picker-input').getAttribute('data-file-limit') !== '1000') throw new Error('A folder intake should allow up to 1,000 files')
-if (await page.locator('.folder-picker-input').getAttribute('webkitdirectory') !== '') throw new Error('The folder intake should open a directory picker')
-if (await page.getByRole('button', { name: '选择文件夹' }).count() !== 1) throw new Error('The initial folder picker button is missing')
+if (await page.locator('.drop-zone button, .drop-zone [role="button"]').count()) throw new Error('The empty drop zone should not show a file-picker button')
 if ((await page.locator('.preferences select').count()) !== 3) throw new Error('Output preferences or compression preset are missing before upload')
 if (await page.locator('.preferences select').nth(0).inputValue() !== 'all') throw new Error('Compression should default to both parallel qualities')
 if ((await page.locator('.preferences select').nth(0).locator('option[value="all"]').innerText()).trim() !== '两档并行') throw new Error('Parallel-quality option copy is incorrect')
@@ -172,7 +170,6 @@ await page.locator('.file-picker-input').setInputFiles([
 ])
 
 if (await page.locator('.drop-zone').count()) throw new Error('Drop zone should hide after files are added')
-await page.getByRole('button', { name: '继续上传' }).waitFor()
 await page.getByRole('button', { name: '清空' }).waitFor()
 
 const processingRow = page.locator('.job-row.status-processing').first()
@@ -287,25 +284,14 @@ await page.waitForFunction(() => document.querySelector('.download-all')?.getAni
   (animation) => animation.playState === 'finished',
 ))
 const clearBox = await page.getByRole('button', { name: '清空' }).boundingBox()
-const addBox = await page.getByRole('button', { name: '继续上传' }).boundingBox()
 const zipBox = await page.getByRole('button', { name: '打包下载' }).boundingBox()
-if (!clearBox || !addBox || !zipBox || !(clearBox.x < addBox.x && addBox.x < zipBox.x)) {
+if (!clearBox || !zipBox || !(clearBox.x < zipBox.x)) {
   throw new Error('Queue action order is incorrect')
 }
-if (Math.max(clearBox.y, addBox.y, zipBox.y) - Math.min(clearBox.y, addBox.y, zipBox.y) > 2) {
+if (Math.abs(clearBox.y - zipBox.y) > 2) {
   throw new Error('Queue actions should stay in a single row')
 }
-const addMoreButton = page.getByRole('button', { name: '继续上传' })
-await addMoreButton.hover()
-await page.waitForTimeout(220)
-const hoverClearance = await addMoreButton.evaluate((button) => {
-  const section = button.closest('.queue-section')?.getBoundingClientRect()
-  const box = button.getBoundingClientRect()
-  return section ? box.top - section.top : null
-})
-if (hoverClearance === null || hoverClearance < 4) {
-  throw new Error(`Queue buttons should keep visible top clearance while hovering: ${hoverClearance}`)
-}
+if (await page.locator('.queue-controls .file-picker-menu, .queue-controls .add-more-button').count()) throw new Error('The queue should not show an add-files button')
 const singleDownloadButton = page.locator('.job-row').first().locator('.job-action button')
 if ((await page.locator('.job-row').first().locator('.job-action button').count()) !== 1) throw new Error('Single-quality rows should only retain the download action')
 if ((await singleDownloadButton.innerText()).trim() !== '') throw new Error('Single download should be icon only')
@@ -1521,7 +1507,7 @@ console.log(JSON.stringify({
   ratioAnimation,
   svgScreenshot: '/tmp/compreesor-svg.png',
   bodyWidth,
-  actionOrder: [clearBox.x, addBox.x, zipBox.x],
+  actionOrder: [clearBox.x, zipBox.x],
   desktopScreenshot: '/tmp/compreesor-desktop.png',
   qualityTableScreenshot: '/tmp/compreesor-quality-table.png',
   pinnedComparisonScreenshot: '/tmp/compreesor-pinned-comparison.png',
