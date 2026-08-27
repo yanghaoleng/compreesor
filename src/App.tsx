@@ -2,6 +2,8 @@ import {
   CaretDown,
   Check,
   CheckCircle,
+  DownloadSimple,
+  FolderOpen,
   Package,
   Plus,
   SpinnerGap,
@@ -68,6 +70,8 @@ const MAX_IMAGE_BYTES = 100 * 1024 * 1024
 const MAX_MEDIA_BYTES = 500 * 1024 * 1024
 const MAX_PDF_BYTES = 100 * 1024 * 1024
 const PREVIEW_HEIGHT_STORAGE_KEY = 'compreesor-preview-height'
+const PREVIEW_EXIT_DURATION_MS = 180
+const ACCEPTED_FILE_TYPES = 'image/jpeg,image/png,image/webp,image/avif,image/svg+xml,.jxl,image/gif,application/pdf,.pdf,video/*,.mov,.m4v,.mkv,.avi,.mpeg,.mpg'
 
 type PackageSelection = QualityPreset | 'all'
 
@@ -193,12 +197,15 @@ function App() {
   const jobsRef = useRef<MediaJob[]>([])
   const urlsRef = useRef(new Set<string>())
   const inputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const dragDepthRef = useRef(0)
   const footerRef = useRef<SiteFooterHandle>(null)
   const toastTimerRef = useRef<number | null>(null)
   const packageDownloadTimerRef = useRef<number | null>(null)
+  const donationOpenTimerRef = useRef<number | null>(null)
   const packageMenuRef = useRef<HTMLDivElement>(null)
   const previewExitTimerRef = useRef<number | null>(null)
+  const autoPreviewedJobIdRef = useRef<string | null>(null)
   const messages = I18N[locale]
   const currentLanguage = LANGUAGE_OPTIONS.find((option) => option.id === locale) ?? LANGUAGE_OPTIONS[0]
 
@@ -219,6 +226,10 @@ function App() {
     if (packageDownloadTimerRef.current !== null) {
       window.clearTimeout(packageDownloadTimerRef.current)
       packageDownloadTimerRef.current = null
+    }
+    if (donationOpenTimerRef.current !== null) {
+      window.clearTimeout(donationOpenTimerRef.current)
+      donationOpenTimerRef.current = null
     }
     setPackageDownloadState('idle')
     setPackageMenuOpen(false)
@@ -266,6 +277,7 @@ function App() {
     return () => {
       if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current)
       if (packageDownloadTimerRef.current !== null) window.clearTimeout(packageDownloadTimerRef.current)
+      if (donationOpenTimerRef.current !== null) window.clearTimeout(donationOpenTimerRef.current)
       if (previewExitTimerRef.current !== null) window.clearTimeout(previewExitTimerRef.current)
       imagePoolRef.current?.dispose()
       disposeLoadedMediaEngine()
@@ -482,7 +494,7 @@ function App() {
                 }
               : input
             const dot = processed.outputName.lastIndexOf('.')
-            const qualityName = preset === 'extreme' ? '极限' : preset === 'balanced' ? '够用' : '无损'
+            const qualityName = preset === 'extreme' ? '极限' : '够用'
             const outputName = processed.outputName.includes(`-${qualityName}-压缩`)
               ? processed.outputName
               : dot > 0
@@ -518,7 +530,7 @@ function App() {
                 format: desktopFormat,
                 variants: QUALITY_PRESETS.map((preset) => ({
                   preset,
-                  outputName: `${baseName(job.file.name)}-${preset === 'extreme' ? '极限' : preset === 'balanced' ? '够用' : '无损'}-压缩.${outputExtension}`,
+                  outputName: `${baseName(job.file.name)}-${preset === 'extreme' ? '极限' : '够用'}-压缩.${outputExtension}`,
                 })),
               })
               for (let index = 0; index < nativeResults.length; index += 1) {
@@ -649,7 +661,7 @@ function App() {
             ? '结果已保存到原文件夹'
             : primary.savedInPlace
               ? primary.unchanged ? '原文件已保留' : '已替换原路径文件'
-            : job.allQualities ? job.sourcePath && window.compreesorDesktop ? '三档结果已保存到原文件夹' : '三档结果已完成'
+            : job.allQualities ? job.sourcePath && window.compreesorDesktop ? '两档结果已保存到原文件夹' : '两档结果已完成'
             : keptOriginal ? '原文件已经很紧凑，未再增大' : '压缩完成',
         })
       } catch (error) {
@@ -830,6 +842,7 @@ function App() {
     () => jobs.filter((job) => job.status === 'done' && job.resultBlob && job.resultUrl && job.outputName),
     [jobs],
   )
+  const isAllQualityQueue = jobs.some((job) => job.allQualities)
   const hasQualityPackages = completedJobs.some((job) => job.variants.length > 1)
   const previewableJobs = useMemo(
     () => jobs.filter((job) => job.status === 'done' && job.resultUrl),
@@ -840,6 +853,19 @@ function App() {
   const activePreviewRenderId = previewJob?.id ?? null
   const retainedPreviewJob = previewableJobs.find((job) => job.id === renderedPreviewJobId) ?? null
   const renderedPreviewJob = previewJob ?? retainedPreviewJob
+
+  useEffect(() => {
+    const onlyJob = jobs.length === 1 ? jobs[0] : null
+    if (
+      onlyJob?.status === 'done'
+      && onlyJob.resultUrl
+      && autoPreviewedJobIdRef.current !== onlyJob.id
+    ) {
+      autoPreviewedJobIdRef.current = onlyJob.id
+      setPinnedPreviewJobId(onlyJob.id)
+      setHoveredPreviewJobId(null)
+    }
+  }, [jobs])
 
   useEffect(() => {
     if (previewExitTimerRef.current !== null) {
@@ -860,7 +886,7 @@ function App() {
       setRenderedPreviewJobId(null)
       setPreviewExiting(false)
       previewExitTimerRef.current = null
-    }, 180)
+    }, PREVIEW_EXIT_DURATION_MS)
   }, [activePreviewRenderId, renderedPreviewJobId])
 
   const pinPreview = useCallback((jobId: string) => {
@@ -898,9 +924,42 @@ function App() {
     }
   }, [hoveredPreviewJobId, pinnedPreviewJobId, previewableJobs])
   const isProcessing = jobs.some((job) => job.status === 'queued' || job.status === 'processing')
+  const isSingleCompletedFile = jobs.length === 1 && completedJobs.length === 1
   const originalTotal = completedJobs.reduce((sum, job) => sum + job.file.size, 0)
   const resultTotal = completedJobs.reduce((sum, job) => sum + (job.resultBlob?.size ?? 0), 0)
   const totalSaved = originalTotal > 0 ? Math.max(0, Math.round((1 - resultTotal / originalTotal) * 100)) : 0
+  const packageSavings = useMemo(() => {
+    const savingsFor = (selection: PackageSelection) => {
+      let packageOriginalTotal = 0
+      let packageResultTotal = 0
+
+      for (const job of completedJobs) {
+        const available = job.variants.length > 0 ? job.variants : []
+        const selected = available.length > 0
+          ? selection === 'all'
+            ? available
+            : available.filter((variant) => variant.preset === selection)
+          : selection === 'all' || job.preferences.compressionPreset === selection
+            ? [{ blob: job.resultBlob! }]
+            : []
+
+        for (const variant of selected) {
+          packageOriginalTotal += job.file.size
+          packageResultTotal += variant.blob.size
+        }
+      }
+
+      return packageOriginalTotal > 0
+        ? Math.max(0, Math.round((1 - packageResultTotal / packageOriginalTotal) * 100))
+        : 0
+    }
+
+    return {
+      extreme: savingsFor('extreme'),
+      balanced: savingsFor('balanced'),
+    }
+  }, [completedJobs])
+  const hasPackageMenu = hasQualityPackages && !isSingleCompletedFile
   const addDroppedFiles = useCallback((event: React.DragEvent) => {
     event.preventDefault()
     dragDepthRef.current = 0
@@ -983,6 +1042,10 @@ function App() {
       window.clearTimeout(packageDownloadTimerRef.current)
       packageDownloadTimerRef.current = null
     }
+    if (donationOpenTimerRef.current !== null) {
+      window.clearTimeout(donationOpenTimerRef.current)
+      donationOpenTimerRef.current = null
+    }
     setIsZipping(true)
     setNotice(null)
     try {
@@ -1033,18 +1096,22 @@ function App() {
         setPackageDownloadState('again')
         packageDownloadTimerRef.current = null
       }, 6000)
-      footerRef.current?.openDonation()
+      donationOpenTimerRef.current = window.setTimeout(() => {
+        footerRef.current?.openDonation()
+        donationOpenTimerRef.current = null
+      }, renderedPreviewJob ? PREVIEW_EXIT_DURATION_MS + 20 : 0)
     } catch {
       setNotice(messages.packageFailed)
     } finally {
       setIsZipping(false)
     }
-  }, [completedJobs, isProcessing, isZipping, messages])
+  }, [completedJobs, isProcessing, isZipping, messages, renderedPreviewJob])
 
   const startPackageDownload = useCallback((packageSelection: PackageSelection = 'all') => {
     setPackageMenuOpen(false)
+    closePreview()
     void downloadAll(packageSelection)
-  }, [downloadAll])
+  }, [closePreview, downloadAll])
 
   return (
     <div
@@ -1066,9 +1133,28 @@ function App() {
         <section className="tool-panel" aria-labelledby="page-title">
           <input
             ref={inputRef}
+            className="file-picker-input"
             type="file"
             data-file-limit={MAX_FILES}
-            accept="image/jpeg,image/png,image/webp,image/avif,image/svg+xml,.jxl,image/gif,application/pdf,.pdf,video/*,.mov,.m4v,.mkv,.avi,.mpeg,.mpg"
+            accept={ACCEPTED_FILE_TYPES}
+            multiple
+            hidden
+            onChange={(event) => {
+              void addFiles(Array.from(event.target.files ?? []))
+              event.target.value = ''
+            }}
+          />
+          <input
+            ref={(node) => {
+              folderInputRef.current = node
+              if (!node) return
+              node.setAttribute('webkitdirectory', '')
+              node.setAttribute('directory', '')
+            }}
+            className="folder-picker-input"
+            type="file"
+            data-file-limit={MAX_FILES}
+            accept={ACCEPTED_FILE_TYPES}
             multiple
             hidden
             onChange={(event) => {
@@ -1106,18 +1192,23 @@ function App() {
                 onDragOver={(event) => event.preventDefault()}
                 onDragLeave={leaveDropTarget}
                 onDrop={addDroppedFiles}
-                onClick={() => inputRef.current?.click()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click()
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('button')) return
+                  inputRef.current?.click()
                 }}
-                role="button"
-                tabIndex={0}
                 aria-label={messages.chooseDrop}
               >
                 <span className="drop-icon"><UploadSimple size={31} weight="bold" /></span>
                 <h2>{isDragging ? messages.releaseDrop : messages.chooseDrop}</h2>
                 <p>{messages.formats}</p>
-                <span className="select-button">{messages.chooseFiles}</span>
+                <div className="drop-zone-actions">
+                  <button className="select-button" type="button" onClick={() => inputRef.current?.click()}>
+                    <UploadSimple size={16} weight="bold" />{messages.chooseFiles}
+                  </button>
+                  <button className="select-button is-secondary" type="button" onClick={() => folderInputRef.current?.click()}>
+                    <FolderOpen size={16} weight="bold" />{messages.chooseFolder}
+                  </button>
+                </div>
               </div>
           )}
 
@@ -1140,12 +1231,23 @@ function App() {
               )}
               <div className="queue-header">
                 <div className="queue-summary">
-                  <h2 id="queue-title">{messages.files(jobs.length)}</h2>
-                  <p>
-                    {isProcessing
-                      ? messages.processingCount(jobs.filter((job) => job.status === 'processing').length || 1)
-                      : messages.completedSummary(completedJobs.length, totalSaved)}
-                  </p>
+                  <h2 id="queue-title">
+                    {messages.files(jobs.length)}
+                    {isAllQualityQueue ? (
+                      <span className="queue-status-inline">
+                        {isProcessing
+                          ? messages.processingCount(jobs.filter((job) => job.status === 'processing').length || 1)
+                          : messages.completedCount(completedJobs.length)}
+                      </span>
+                    ) : null}
+                  </h2>
+                  {!isAllQualityQueue ? (
+                    <p>
+                      {isProcessing
+                        ? messages.processingCount(jobs.filter((job) => job.status === 'processing').length || 1)
+                        : messages.completedSummary(completedJobs.length, totalSaved)}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="queue-controls">
                   <button className="clear-button" type="button" onClick={clearAll} disabled={isProcessing}>
@@ -1154,19 +1256,33 @@ function App() {
                   <button className="add-more-button" type="button" onClick={() => inputRef.current?.click()}>
                     <Plus size={16} weight="bold" />{messages.continueUpload}
                   </button>
+                  <button
+                    className="folder-upload-button"
+                    type="button"
+                    onClick={() => folderInputRef.current?.click()}
+                    aria-label={messages.chooseFolder}
+                    title={messages.chooseFolder}
+                  >
+                    <FolderOpen size={16} weight="bold" />{messages.chooseFolder}
+                  </button>
                   {!isProcessing && completedJobs.length > 0 ? (
                     <div
-                      className={`package-download-control${hasQualityPackages ? ' has-menu' : ''}${packageDownloadState === 'downloaded' ? ' is-downloaded' : ''}${packageDownloadState === 'again' ? ' is-download-again' : ''}`}
+                      className={`package-download-control${hasPackageMenu ? ' has-menu' : ''}${packageDownloadState === 'downloaded' ? ' is-downloaded' : ''}${packageDownloadState === 'again' ? ' is-download-again' : ''}`}
                       ref={packageMenuRef}
                     >
                       <button
                         className={`download-all${packageDownloadState !== 'idle' ? ' has-downloaded' : ''}${packageDownloadState === 'downloaded' ? ' is-downloaded' : ''}${packageDownloadState === 'again' ? ' is-download-again' : ''}`}
                         type="button"
-                        onClick={() => startPackageDownload('all')}
-                        disabled={isZipping || packageDownloadState === 'downloaded'}
+                        onClick={() => {
+                          if (isSingleCompletedFile) downloadJob(completedJobs[0])
+                          else startPackageDownload(hasQualityPackages ? 'balanced' : 'all')
+                        }}
+                        disabled={!isSingleCompletedFile && (isZipping || packageDownloadState === 'downloaded')}
                         aria-busy={isZipping}
                       >
-                        {isZipping ? (
+                        {isSingleCompletedFile ? (
+                          <DownloadSimple size={17} weight="bold" />
+                        ) : isZipping ? (
                           <SpinnerGap className="spin" size={17} />
                         ) : packageDownloadState === 'downloaded' ? (
                           <Check size={17} weight="bold" />
@@ -1174,16 +1290,22 @@ function App() {
                           <Package size={17} weight="bold" />
                         )}
                         <span aria-live="polite">
-                          {isZipping
+                          {isSingleCompletedFile
+                            ? hasQualityPackages
+                              ? `${messages.download} · ${messages.balanced} · ${messages.packageSaved(packageSavings.balanced)}`
+                              : messages.download
+                            : isZipping
                             ? messages.zipping
                             : packageDownloadState === 'downloaded'
                               ? messages.packageDownloaded
                               : packageDownloadState === 'again'
                                 ? messages.packageDownloadAgain
-                                : messages.packageDownload}
+                                : hasQualityPackages
+                                  ? `${messages.packageDownloadQuality(messages.balanced)} · ${messages.packageSaved(packageSavings.balanced)}`
+                                  : messages.packageDownload}
                         </span>
                       </button>
-                      {hasQualityPackages ? (
+                      {hasPackageMenu ? (
                         <>
                           <button
                             className="package-menu-toggle"
@@ -1198,12 +1320,14 @@ function App() {
                           </button>
                           {packageMenuOpen ? (
                             <div className="package-download-menu" role="menu" aria-label={messages.packageMenuLabel}>
-                              <button type="button" role="menuitem" onClick={() => startPackageDownload('all')}>{messages.packageAllQualities}</button>
-                              {QUALITY_PRESETS.map((preset) => (
+                              {(['extreme'] as const).map((preset) => (
                                 <button type="button" role="menuitem" key={preset} onClick={() => startPackageDownload(preset)}>
-                                  {messages.packageOnlyQuality(qualityLabel(preset, messages))}
+                                  {messages.packageOnlyQuality(qualityLabel(preset, messages))} · {messages.packageSaved(packageSavings[preset])}
                                 </button>
                               ))}
+                              <button className="package-all-qualities" type="button" role="menuitem" onClick={() => startPackageDownload('all')}>
+                                {messages.packageAllQualities}
+                              </button>
                             </div>
                           ) : null}
                         </>

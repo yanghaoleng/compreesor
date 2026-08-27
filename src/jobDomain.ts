@@ -1,5 +1,4 @@
 import {
-  QUALITY_PRESET_ORDER,
   baseName,
   classifyName,
   extensionOf,
@@ -59,7 +58,7 @@ export type MediaJob = {
   variants: ResultVariant[]
 }
 
-export const QUALITY_PRESETS = [...QUALITY_PRESET_ORDER] as QualityPreset[]
+export const QUALITY_PRESETS: QualityPreset[] = ['extreme', 'balanced']
 
 export { baseName, extensionOf }
 

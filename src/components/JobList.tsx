@@ -35,6 +35,27 @@ type JobListProps = {
   onRetry: (job: MediaJob) => void | Promise<void>
 }
 
+type SortDirection = 'ascending' | 'descending'
+type SortState =
+  | { kind: 'name'; direction: SortDirection }
+  | { kind: 'quality'; preset: QualityPreset; metric: 'size' | 'ratio'; direction: SortDirection }
+
+function nextQualitySort(current: SortState | null, preset: QualityPreset): SortState {
+  if (current?.kind !== 'quality' || current.preset !== preset) {
+    return { kind: 'quality', preset, metric: 'size', direction: 'ascending' }
+  }
+  if (current.metric === 'size' && current.direction === 'ascending') {
+    return { kind: 'quality', preset, metric: 'ratio', direction: 'ascending' }
+  }
+  if (current.metric === 'ratio' && current.direction === 'ascending') {
+    return { kind: 'quality', preset, metric: 'size', direction: 'descending' }
+  }
+  if (current.metric === 'size' && current.direction === 'descending') {
+    return { kind: 'quality', preset, metric: 'ratio', direction: 'descending' }
+  }
+  return { kind: 'quality', preset, metric: 'size', direction: 'ascending' }
+}
+
 export function JobList({
   jobs,
   locale,
@@ -47,26 +68,45 @@ export function JobList({
 }: JobListProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const previousProcessingIdsRef = useRef(new Set<string>())
-  const [sort, setSort] = useState<{ preset: QualityPreset; direction: 'ascending' | 'descending' } | null>(null)
+  const [sort, setSort] = useState<SortState | null>(null)
   const showVariantHeader = jobs.some((job) => job.allQualities)
+  const nameCollator = useMemo(() => new Intl.Collator(locale, { sensitivity: 'base', numeric: true }), [locale])
   const displayedJobs = useMemo(() => {
     if (!sort) return jobs
+    if (sort.kind === 'name') {
+      return jobs
+        .map((job, originalIndex) => ({ job, originalIndex }))
+        .sort((left, right) => {
+          const leftInitial = Array.from(left.job.file.name.trim())[0] ?? ''
+          const rightInitial = Array.from(right.job.file.name.trim())[0] ?? ''
+          const initialOrder = nameCollator.compare(leftInitial, rightInitial)
+          if (initialOrder === 0) return left.originalIndex - right.originalIndex
+          return sort.direction === 'ascending' ? initialOrder : -initialOrder
+        })
+        .map(({ job }) => job)
+    }
     return jobs
       .map((job, originalIndex) => ({
         job,
         originalIndex,
-        bytes: job.variants.find((variant) => variant.preset === sort.preset)?.blob.size,
+        variant: job.variants.find((variant) => variant.preset === sort.preset),
       }))
       .sort((left, right) => {
-        if (left.bytes === undefined && right.bytes === undefined) return left.originalIndex - right.originalIndex
-        if (left.bytes === undefined) return 1
-        if (right.bytes === undefined) return -1
-        const sizeOrder = left.bytes - right.bytes
-        if (sizeOrder === 0) return left.originalIndex - right.originalIndex
-        return sort.direction === 'ascending' ? sizeOrder : -sizeOrder
+        if (!left.variant && !right.variant) return left.originalIndex - right.originalIndex
+        if (!left.variant) return 1
+        if (!right.variant) return -1
+        const leftValue = sort.metric === 'size'
+          ? left.variant.blob.size
+          : Math.round((left.variant.blob.size / left.job.file.size) * 100)
+        const rightValue = sort.metric === 'size'
+          ? right.variant.blob.size
+          : Math.round((right.variant.blob.size / right.job.file.size) * 100)
+        const valueOrder = leftValue - rightValue
+        if (valueOrder === 0) return left.originalIndex - right.originalIndex
+        return sort.direction === 'ascending' ? valueOrder : -valueOrder
       })
       .map(({ job }) => job)
-  }, [jobs, sort])
+  }, [jobs, nameCollator, sort])
 
   useEffect(() => {
     const processingIds = new Set(
@@ -113,24 +153,43 @@ export function JobList({
     <div className="job-list" ref={listRef}>
       {showVariantHeader ? (
         <div className="job-list-header">
+          <button
+            type="button"
+            className={`job-name-column-header${sort?.kind === 'name' ? ' is-active' : ''}`}
+            data-sort-direction={sort?.kind === 'name' ? sort.direction : 'none'}
+            aria-pressed={sort?.kind === 'name'}
+            aria-label={`${messages.sortFileName}·${sort?.kind === 'name' && sort.direction === 'descending' ? messages.sortDescending : messages.sortAscending}`}
+            title={`${messages.sortFileName}·${sort?.kind === 'name' && sort.direction === 'descending' ? messages.sortDescending : messages.sortAscending}`}
+            onClick={() => setSort((current) => ({
+              kind: 'name',
+              direction: current?.kind === 'name' && current.direction === 'ascending' ? 'descending' : 'ascending',
+            }))}
+          >
+            <span>{messages.fileNameHeader}</span>
+            {sort?.kind === 'name' ? (sort.direction === 'ascending' ? <CaretUp size={10} weight="bold" /> : <CaretDown size={10} weight="bold" />) : null}
+          </button>
           <div className="variant-column-headers" aria-label={messages.allQualities}>
             {QUALITY_PRESETS.map((preset) => {
-              const active = sort?.preset === preset
-              const nextDirection = active && sort.direction === 'ascending' ? 'descending' : 'ascending'
+              const active = sort?.kind === 'quality' && sort.preset === preset
               const label = qualityLabel(preset, messages)
+              const metricLabel = active && sort.metric === 'ratio' ? messages.sortRatio : messages.sortSize
+              const directionLabel = active && sort.direction === 'descending' ? messages.sortDescending : messages.sortAscending
               return (
                 <button
                   key={preset}
                   type="button"
                   className={active ? 'is-active' : undefined}
                   data-sort-direction={active ? sort.direction : 'none'}
+                  data-sort-metric={active ? sort.metric : 'none'}
                   aria-pressed={active}
-                  aria-label={`${messages.sortQuality(label)}·${active ? (sort.direction === 'ascending' ? messages.sortAscending : messages.sortDescending) : messages.sortAscending}`}
-                  title={`${messages.sortQuality(label)}·${active ? (sort.direction === 'ascending' ? messages.sortAscending : messages.sortDescending) : messages.sortAscending}`}
-                  onClick={() => setSort({ preset, direction: nextDirection })}
+                  aria-label={`${messages.sortQuality(label)}·${metricLabel}·${directionLabel}`}
+                  title={`${messages.sortQuality(label)}·${metricLabel}·${directionLabel}`}
+                  onClick={() => setSort((current) => nextQualitySort(current, preset))}
                 >
                   <span>{label}</span>
-                  {active ? (sort.direction === 'ascending' ? <CaretUp size={10} weight="bold" /> : <CaretDown size={10} weight="bold" />) : null}
+                  {active ? (
+                    <small>{metricLabel}{sort.direction === 'ascending' ? '↑' : '↓'}</small>
+                  ) : null}
                 </button>
               )
             })}
@@ -145,6 +204,7 @@ export function JobList({
           <article
             className={`job-row status-${job.status}${job.variants.length > 1 ? ' has-variants' : ''}${selectedJobId === job.id ? ' is-selected' : ''}`}
             data-job-id={job.id}
+            data-original-bytes={job.file.size}
             key={job.id}
             tabIndex={job.status === 'done' && job.resultUrl ? 0 : undefined}
             aria-current={selectedJobId === job.id ? 'true' : undefined}
@@ -205,18 +265,23 @@ export function JobList({
 
             {job.status === 'done' && job.variants.length > 1 ? (
               <div className="variant-results" aria-label={messages.allQualities}>
-                {job.variants.map((variant) => (
-                  <div
-                    className="variant-result-item"
-                    data-output-bytes={variant.blob.size}
-                    key={variant.preset}
-                  >
-                    <small>
-                      <span className="variant-size">{formatBytes(variant.blob.size)}</span>
-                      <AnimatedPercentage value={job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0} className="variant-ratio" />
-                    </small>
-                  </div>
-                ))}
+                {job.variants.map((variant) => {
+                  const compressedRatio = job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0
+                  return (
+                    <div
+                      className="variant-result-item"
+                      data-output-bytes={variant.blob.size}
+                      data-preset={variant.preset}
+                      data-compressed-ratio={compressedRatio}
+                      key={variant.preset}
+                    >
+                      <small>
+                        <span className="variant-size">{formatBytes(variant.blob.size)}</span>
+                        <AnimatedPercentage value={compressedRatio} neutral={compressedRatio >= 100} className="variant-ratio" />
+                      </small>
+                    </div>
+                  )
+                })}
               </div>
             ) : null}
 

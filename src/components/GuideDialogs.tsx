@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { LANGUAGE_OPTIONS, type Locale, type Messages } from '../i18n'
 
 export const CLI_INSTALL_COMMAND = 'npm install -g compreesor-cli'
+export const DESKTOP_DOWNLOAD_URL = 'https://github.com/yanghaoleng/compreesor/releases/download/v1.2.1/Compreesor-1.2.1-arm64.dmg'
 
 type GuideDialogsProps = {
   cliOpen: boolean
@@ -71,6 +72,15 @@ export function GuideDialogs({
                     <CopySimple size={17} weight="bold" />
                   </button>
                 </div>
+              </div>
+              <div className="cli-desktop-download">
+                <div>
+                  <strong>{messages.cliDesktopTitle}</strong>
+                  <span>{messages.cliDesktopText}</span>
+                </div>
+                <a href={DESKTOP_DOWNLOAD_URL} target="_blank" rel="noreferrer">
+                  {messages.cliDesktopDownload} <ArrowSquareOut size={14} weight="bold" />
+                </a>
               </div>
               <div className="guide-grid cli-guide-grid">
                 <article><h4>{messages.cliFolderTitle}</h4><p>{messages.cliFolderText}</p><code>compreesor ./图片目录</code></article>

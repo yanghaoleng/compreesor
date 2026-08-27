@@ -15,12 +15,29 @@ page.on('console', (message) => {
 })
 
 await page.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-await page.getByRole('heading', { name: '输出偏好' }).waitFor()
-if (await page.locator('input[type="file"]').getAttribute('data-file-limit') !== '1000') throw new Error('A single file intake should allow up to 1,000 files')
+await page.locator('.preferences').waitFor()
+const toolPanelPadding = await page.locator('.tool-panel').evaluate((element) => {
+  const style = getComputedStyle(element)
+  return {
+    top: parseFloat(style.paddingTop),
+    right: parseFloat(style.paddingRight),
+    bottom: parseFloat(style.paddingBottom),
+    left: parseFloat(style.paddingLeft),
+  }
+})
+if (toolPanelPadding.top !== 14 || toolPanelPadding.bottom !== 14 || toolPanelPadding.left < 18 || toolPanelPadding.right < 18) {
+  throw new Error(`Tool panel should use compact vertical padding without shrinking responsive side spacing: ${JSON.stringify(toolPanelPadding)}`)
+}
+if (await page.getByRole('heading', { name: '输出偏好' }).count()) throw new Error('The output-preferences heading should be removed')
+if (await page.locator('.file-picker-input').getAttribute('data-file-limit') !== '1000') throw new Error('A single file intake should allow up to 1,000 files')
+if (await page.locator('.folder-picker-input').getAttribute('data-file-limit') !== '1000') throw new Error('A folder intake should allow up to 1,000 files')
+if (await page.locator('.folder-picker-input').getAttribute('webkitdirectory') !== '') throw new Error('The folder intake should open a directory picker')
+if (await page.getByRole('button', { name: '选择文件夹' }).count() !== 1) throw new Error('The initial folder picker button is missing')
 if ((await page.locator('.preferences select').count()) !== 3) throw new Error('Output preferences or compression preset are missing before upload')
-if (await page.locator('.preferences select').nth(0).inputValue() !== 'all') throw new Error('Compression should default to all three qualities')
-if ((await page.locator('.preferences select').nth(0).locator('option[value="all"]').innerText()).trim() !== '三档并行') throw new Error('All-quality option copy is incorrect')
-if ((await page.locator('.preferences select').nth(0).locator('option').count()) !== 9) throw new Error('Compression presets should include three qualities and five target sizes')
+if (await page.locator('.preferences select').nth(0).inputValue() !== 'all') throw new Error('Compression should default to both parallel qualities')
+if ((await page.locator('.preferences select').nth(0).locator('option[value="all"]').innerText()).trim() !== '两档并行') throw new Error('Parallel-quality option copy is incorrect')
+if ((await page.locator('.preferences select').nth(0).locator('option').count()) !== 8) throw new Error('Compression presets should include two qualities and five target sizes')
+if (await page.locator('.preferences select').nth(0).locator('option[value="lossless"]').count()) throw new Error('Lossless should be removed from the web compression options')
 if ((await page.locator('.preference-field').nth(1).locator(':scope > span').innerText()).trim() !== '图片和 PDF') throw new Error('Image and PDF preference label is incorrect')
 if ((await page.locator('.preferences select').nth(1).locator('option[value="pdf"]').count()) !== 1) throw new Error('Image to PDF output is missing')
 if ((await page.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompressor Studio') throw new Error('Brand name is incorrect')
@@ -69,6 +86,15 @@ if (brandAfterHover.classes.includes('brand-mark-in') || brandAfterHover.animati
   throw new Error(`Leaving brand hover must not replay the entrance: ${JSON.stringify(brandAfterHover)}`)
 }
 const compressionTrigger = page.locator('.preference-compression .custom-select-trigger')
+const preferenceBordersAtRest = await page.locator('.preferences .custom-select-trigger').evaluateAll((triggers) => triggers.map((trigger) => getComputedStyle(trigger).borderTopColor))
+if (preferenceBordersAtRest.length !== 3 || preferenceBordersAtRest.some((color) => color !== 'rgba(0, 0, 0, 0)')) {
+  throw new Error(`Top preference controls should have no resting border: ${preferenceBordersAtRest.join(' | ')}`)
+}
+await compressionTrigger.hover()
+await page.waitForTimeout(180)
+if (await compressionTrigger.evaluate((trigger) => getComputedStyle(trigger).borderTopColor) === 'rgba(0, 0, 0, 0)') {
+  throw new Error('Top preference control border should appear on hover')
+}
 const hiddenNativeSelect = await page.locator('.preference-compression .custom-select-native').evaluate((element) => ({
   width: element.getBoundingClientRect().width,
   height: element.getBoundingClientRect().height,
@@ -98,9 +124,11 @@ if ((await page.locator('.preferences select').nth(1).locator('option[value="ori
   throw new Error('Original image output copy is incorrect')
 }
 if (await page.locator('.preferences select').nth(2).inputValue() !== 'mp3') throw new Error('Video output should default to MP3 extraction')
-const preferenceHeadingBox = await page.getByRole('heading', { name: '输出偏好' }).boundingBox()
+const preferencesBox = await page.locator('.preferences').boundingBox()
 const firstPreferenceBox = await page.locator('.preference-field').first().boundingBox()
-if (!preferenceHeadingBox || !firstPreferenceBox || firstPreferenceBox.x - (preferenceHeadingBox.x + preferenceHeadingBox.width) > 28) {
+const preferenceLabelFont = await page.locator('.preference-field').first().locator(':scope > span').evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
+const preferenceOptionFont = await page.locator('.preference-field').first().locator('.custom-select-trigger').evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
+if (!preferencesBox || !firstPreferenceBox || firstPreferenceBox.x - preferencesBox.x > 2 || Math.abs(preferenceLabelFont - preferenceOptionFont) > 0.5) {
   throw new Error('Output preferences should form a compact left-aligned group')
 }
 if ((await page.locator('.topbar-actions button').count()) < 2) throw new Error('Language or theme controls are missing')
@@ -137,7 +165,7 @@ if (themeHoverY > -1.5) throw new Error('Theme control hover lacks lift')
 await themeControl.click()
 await page.waitForFunction(() => document.querySelector('.topbar-actions > .icon-button svg')?.getAnimations().some((animation) => animation.animationName === 'control-icon-in'))
 await themeControl.click()
-await page.locator('input[type="file"]').setInputFiles([
+await page.locator('.file-picker-input').setInputFiles([
   '/tmp/compreesor-fixture.png',
   '/tmp/compreesor-animation.gif',
   '/tmp/compreesor-video.mp4',
@@ -246,7 +274,7 @@ if (await page.locator('.donate-popover').count()) throw new Error('Donation pop
 const footerLinkBoxes = await Promise.all([
   page.getByRole('button', { name: '使用说明' }).boundingBox(),
   page.getByRole('link', { name: '作者主页' }).boundingBox(),
-  page.getByRole('button', { name: 'CLI 命令行' }).boundingBox(),
+  page.getByRole('button', { name: 'CLI 命令行和客户端' }).boundingBox(),
   donateTrigger.boundingBox(),
 ])
 if (footerLinkBoxes.some((box) => !box)) throw new Error('Footer links are missing')
@@ -267,6 +295,17 @@ if (!clearBox || !addBox || !zipBox || !(clearBox.x < addBox.x && addBox.x < zip
 if (Math.max(clearBox.y, addBox.y, zipBox.y) - Math.min(clearBox.y, addBox.y, zipBox.y) > 2) {
   throw new Error('Queue actions should stay in a single row')
 }
+const addMoreButton = page.getByRole('button', { name: '继续上传' })
+await addMoreButton.hover()
+await page.waitForTimeout(220)
+const hoverClearance = await addMoreButton.evaluate((button) => {
+  const section = button.closest('.queue-section')?.getBoundingClientRect()
+  const box = button.getBoundingClientRect()
+  return section ? box.top - section.top : null
+})
+if (hoverClearance === null || hoverClearance < 4) {
+  throw new Error(`Queue buttons should keep visible top clearance while hovering: ${hoverClearance}`)
+}
 const singleDownloadButton = page.locator('.job-row').first().locator('.job-action button')
 if ((await page.locator('.job-row').first().locator('.job-action button').count()) !== 1) throw new Error('Single-quality rows should only retain the download action')
 if ((await singleDownloadButton.innerText()).trim() !== '') throw new Error('Single download should be icon only')
@@ -281,12 +320,22 @@ const firstRow = page.locator('.job-row').first()
 await firstRow.hover()
 await page.locator('.result-preview .image-preview-stage img').waitFor()
 if (!(await page.locator('.result-preview').getAttribute('class'))?.includes('is-transient')) throw new Error('Row hover should open a transient bottom preview')
+const transientPreview = await page.locator('.result-preview').evaluate((preview) => ({
+  height: preview.offsetHeight,
+  titleDisplay: getComputedStyle(preview.querySelector(':scope > header')).display,
+  resizeDisplay: getComputedStyle(preview.querySelector('.preview-resize-handle')).display,
+}))
+if (Math.abs(transientPreview.height - 220) > 2 || transientPreview.titleDisplay !== 'none' || transientPreview.resizeDisplay !== 'none') {
+  throw new Error(`Hover preview should be content-only at the minimum height: ${JSON.stringify(transientPreview)}`)
+}
 const previewEntrance = await page.locator('.result-preview').evaluate((element) => getComputedStyle(element).animationName)
 if (!previewEntrance.includes('preview-in')) throw new Error(`Preview entrance animation is missing: ${previewEntrance}`)
 await page.locator('.preferences').hover()
-await page.locator('.result-preview.is-exiting').waitFor()
-const previewExit = await page.locator('.result-preview').evaluate((element) => getComputedStyle(element).animationName)
-if (!previewExit.includes('preview-out')) throw new Error(`Preview exit animation is missing: ${previewExit}`)
+await page.waitForFunction(() => !document.querySelector('.result-preview') || document.querySelector('.result-preview')?.classList.contains('is-exiting'))
+if (await page.locator('.result-preview.is-exiting').count()) {
+  const previewExit = await page.locator('.result-preview').evaluate((element) => getComputedStyle(element).animationName)
+  if (!previewExit.includes('preview-out')) throw new Error(`Preview exit animation is missing: ${previewExit}`)
+}
 await page.waitForFunction(() => !document.querySelector('.result-preview'))
 await firstRow.click()
 await page.locator('.result-preview .image-preview-stage img').waitFor()
@@ -425,7 +474,9 @@ if (await page.locator('.job-row.is-selected').count()) throw new Error('Escape 
 
 const comparisonPage = await browser.newPage({ viewport: { width: 1440, height: 1050 }, deviceScaleFactor: 1 })
 await comparisonPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-await comparisonPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
+await comparisonPage.evaluate(() => window.localStorage.setItem('compreesor-preview-height', '520'))
+await comparisonPage.reload({ waitUntil: 'networkidle' })
+await comparisonPage.locator('.file-picker-input').setInputFiles('/tmp/compreesor-fixture.png')
 await comparisonPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
   undefined,
@@ -441,6 +492,10 @@ const qualityColumns = await comparisonPage.locator('.variant-result-item').eval
   const value = item.querySelector('small')
   const valueBox = value?.getBoundingClientRect()
   const valueStyle = value ? getComputedStyle(value) : null
+  const sizeBox = item.querySelector('.variant-size')?.getBoundingClientRect()
+  const ratioBox = item.querySelector('.variant-ratio')?.getBoundingClientRect()
+  const outputBytes = Number(item.getAttribute('data-output-bytes'))
+  const originalBytes = Number(item.closest('.job-row')?.getAttribute('data-original-bytes'))
   return {
     x: box.x,
     y: box.y,
@@ -451,7 +506,10 @@ const qualityColumns = await comparisonPage.locator('.variant-result-item').eval
     titleCount: item.querySelectorAll('b').length,
     valueY: valueBox?.y ?? null,
     valueFontSize: valueStyle ? parseFloat(valueStyle.fontSize) : null,
+    sizeBottom: sizeBox?.bottom ?? null,
+    ratioTop: ratioBox?.top ?? null,
     ratioText: item.querySelector('.variant-ratio')?.textContent?.replace(/\s+/g, '') ?? '',
+    expectedRatio: originalBytes > 0 ? `${Math.round((outputBytes / originalBytes) * 100)}%` : '0%',
   }
 }))
 const compactComparisonRowHeight = await comparisonPage.locator('.job-row').first().evaluate((element) => element.getBoundingClientRect().height)
@@ -459,33 +517,91 @@ const qualityHeader = await comparisonPage.locator('.variant-column-headers butt
   text: button.textContent?.trim() ?? '',
   width: button.getBoundingClientRect().width,
   fontSize: parseFloat(getComputedStyle(button).fontSize),
+  textAlign: getComputedStyle(button).textAlign,
+  contentLeftGap: button.firstElementChild ? button.firstElementChild.getBoundingClientRect().left - button.getBoundingClientRect().left : null,
 })))
+const fileNameHeader = comparisonPage.locator('.job-name-column-header')
 if (
-  qualityColumns.length !== 3
+  qualityColumns.length !== 2
   || qualityColumns.some((column) => column.border !== '0px' || column.background !== 'rgba(0, 0, 0, 0)')
-  || qualityColumns.some((column) => column.textAlign !== 'right' || column.titleCount !== 0)
+  || qualityColumns.some((column) => column.textAlign !== 'left' || column.titleCount !== 0)
   || Math.max(...qualityColumns.map((column) => column.y)) - Math.min(...qualityColumns.map((column) => column.y)) > 1
   || Math.max(...qualityColumns.map((column) => column.width)) - Math.min(...qualityColumns.map((column) => column.width)) > 1
-  || qualityColumns.some((column) => column.width > 74)
-  || qualityColumns.some((column) => column.valueY === null || column.valueFontSize === null || column.valueFontSize < 11 || !/^\d+%$/.test(column.ratioText))
+  || qualityColumns.some((column) => column.width < 82 || column.width > 93)
+  || qualityColumns.some((column) => column.valueY === null || column.valueFontSize === null || column.valueFontSize < 12 || !/^\d+%$/.test(column.ratioText))
+  || qualityColumns.some((column) => column.ratioText !== column.expectedRatio)
+  || qualityColumns.some((column) => column.sizeBottom === null || column.ratioTop === null || column.ratioTop < column.sizeBottom - 1)
   || Math.max(...qualityColumns.map((column) => column.valueY)) - Math.min(...qualityColumns.map((column) => column.valueY)) > 1
-  || qualityHeader.length !== 3
-  || qualityHeader.map((column) => column.text).join('|') !== '极限|够用|无损'
-  || qualityHeader.some((column) => column.fontSize < 11 || column.width > 74)
+  || qualityHeader.length !== 2
+  || qualityHeader.map((column) => column.text).join('|') !== '极限|够用'
+  || qualityHeader.some((column) => column.fontSize < 12 || column.width < 82 || column.width > 93 || column.contentLeftGap === null || column.contentLeftGap > 3)
+  || (await fileNameHeader.innerText()).trim() !== '文件名'
+  || await fileNameHeader.evaluate((button) => button.firstElementChild ? button.firstElementChild.getBoundingClientRect().left - button.getBoundingClientRect().left > 3 : true)
   || compactComparisonRowHeight > 84
 ) {
   throw new Error(`Quality results should use compact header-aligned columns: ${JSON.stringify({ qualityColumns, qualityHeader, compactComparisonRowHeight })}`)
 }
-if ((await comparisonPage.locator('.job-row.has-variants .job-copy p').innerText()).includes('→')) throw new Error('Three-quality rows should show only the original file size on the left')
-const extremeHeader = comparisonPage.getByRole('button', { name: /按极限压缩后体积排序/ })
+const fileHeaderAlignment = await fileNameHeader.evaluate((button) => {
+  const header = button.closest('.job-list-header')?.getBoundingClientRect()
+  const filename = document.querySelector('.job-row .job-copy')?.getBoundingClientRect()
+  const box = button.getBoundingClientRect()
+  return header && filename ? {
+    headerLeftGap: box.left - header.left,
+    distanceBeforeFilename: filename.left - box.left,
+  } : null
+})
+if (!fileHeaderAlignment || fileHeaderAlignment.headerLeftGap > 9 || fileHeaderAlignment.distanceBeforeFilename < 40) {
+  throw new Error(`File-name header should align to the table's left edge: ${JSON.stringify(fileHeaderAlignment)}`)
+}
+if (await comparisonPage.locator('.variant-saving').count()) throw new Error('Quality results should omit the saved-prefix label')
+if ((await comparisonPage.locator('.job-row.has-variants .job-copy p').innerText()).includes('→')) throw new Error('Parallel-quality rows should show only the original file size on the left')
+if (await comparisonPage.locator('.queue-summary > p').count()) throw new Error('Parallel-quality summary should not use a separate detail line')
+if (!(await comparisonPage.locator('.queue-summary h2').innerText()).includes('1 个已完成')) throw new Error('Completed count should sit beside the file count')
+const extremeHeader = comparisonPage.getByRole('button', { name: /按极限结果排序/ })
 await extremeHeader.click()
-if (await extremeHeader.getAttribute('data-sort-direction') !== 'ascending') throw new Error('First quality-header click should sort ascending')
+if (await extremeHeader.getAttribute('data-sort-direction') !== 'ascending' || await extremeHeader.getAttribute('data-sort-metric') !== 'size' || !(await extremeHeader.innerText()).includes('体积↑')) throw new Error('First quality-header click should sort size ascending')
+const unifiedTableType = await comparisonPage.evaluate(() => {
+  const selectors = [
+    '.queue-status-inline',
+    '.queue-controls button',
+    '.variant-column-headers button > span',
+    '.variant-column-headers button > small',
+    '.variant-size',
+    '.variant-ratio',
+  ]
+  return selectors.map((selector) => ({
+    selector,
+    size: parseFloat(getComputedStyle(document.querySelector(selector)).fontSize),
+  }))
+})
+if (unifiedTableType.some((item) => item.size !== 12)) {
+  throw new Error(`Table, status, controls and sorting labels should share one font size: ${JSON.stringify(unifiedTableType)}`)
+}
 await extremeHeader.click()
-if (await extremeHeader.getAttribute('data-sort-direction') !== 'descending') throw new Error('Second quality-header click should sort descending')
-if (await comparisonPage.locator('.result-ratio-range').count()) throw new Error('Three-quality rows should not show a unified ratio range')
-if (await comparisonPage.locator('.job-row.has-variants .job-state svg').count()) throw new Error('Three-quality rows should omit the redundant completion icon')
-if ((await comparisonPage.locator('.job-row.has-variants .job-state').innerText()).trim() !== '') throw new Error('Three-quality rows should omit redundant completion text')
-if ((await comparisonPage.getByRole('button', { name: '选择打包档位' }).count()) !== 1) throw new Error('Three-quality mode should show a ZIP quality menu')
+if (await extremeHeader.getAttribute('data-sort-direction') !== 'ascending' || await extremeHeader.getAttribute('data-sort-metric') !== 'ratio' || !(await extremeHeader.innerText()).includes('压缩比↑')) throw new Error('Second quality-header click should sort ratio ascending')
+await extremeHeader.click()
+if (await extremeHeader.getAttribute('data-sort-direction') !== 'descending' || await extremeHeader.getAttribute('data-sort-metric') !== 'size' || !(await extremeHeader.innerText()).includes('体积↓')) throw new Error('Third quality-header click should sort size descending')
+await extremeHeader.click()
+if (await extremeHeader.getAttribute('data-sort-direction') !== 'descending' || await extremeHeader.getAttribute('data-sort-metric') !== 'ratio' || !(await extremeHeader.innerText()).includes('压缩比↓')) throw new Error('Fourth quality-header click should sort ratio descending')
+if (await comparisonPage.locator('.result-ratio-range').count()) throw new Error('Parallel-quality rows should not show a unified ratio range')
+if (await comparisonPage.locator('.job-row.has-variants .job-state svg').count()) throw new Error('Parallel-quality rows should omit the redundant completion icon')
+if ((await comparisonPage.locator('.job-row.has-variants .job-state').innerText()).trim() !== '') throw new Error('Parallel-quality rows should omit redundant completion text')
+if (await comparisonPage.getByRole('button', { name: '选择打包档位' }).count()) throw new Error('A single file should not show a ZIP quality menu')
+const expectedPackageSavings = await comparisonPage.locator('.job-row.has-variants').evaluate((row) => {
+  const original = Number(row.getAttribute('data-original-bytes'))
+  const outputs = Object.fromEntries(Array.from(row.querySelectorAll('.variant-result-item')).map((item) => [
+    item.getAttribute('data-preset'),
+    Number(item.getAttribute('data-output-bytes')),
+  ]))
+  const saved = (result, originalBytes = original) => Math.max(0, Math.round((1 - result / originalBytes) * 100))
+  return {
+    extreme: saved(outputs.extreme),
+    balanced: saved(outputs.balanced),
+  }
+})
+if ((await comparisonPage.locator('.download-all').innerText()).trim() !== `下载 · 够用 · 省${expectedPackageSavings.balanced}%`) throw new Error('A single parallel-quality file should download the balanced result directly')
+await comparisonPage.locator('.result-preview.is-pinned').waitFor()
+if ((await comparisonPage.locator('.result-preview > header strong').innerText()).trim() !== 'compreesor-fixture.png') throw new Error('The only completed file should open in the preview automatically')
 await comparisonPage.setViewportSize({ width: 430, height: 760 })
 const smallWindowLayout = await comparisonPage.locator('.job-row.has-variants').evaluate((row) => {
   const rowBox = row.getBoundingClientRect()
@@ -507,17 +623,43 @@ if (
   !smallWindowLayout
   || smallWindowLayout.copyRight > smallWindowLayout.variantsLeft + 1
   || smallWindowLayout.variantsRight > smallWindowLayout.rowRight + 1
-  || smallWindowLayout.variantsWidth > 205
+  || smallWindowLayout.variantsWidth > 137
   || smallWindowLayout.rowHeight > 72
   || smallWindowLayout.pageWidth > smallWindowLayout.viewportWidth
 ) {
   throw new Error(`Small-window quality rows should stay aligned and compact: ${JSON.stringify(smallWindowLayout)}`)
 }
+await comparisonPage.waitForFunction(() => {
+  const preview = document.querySelector('.result-preview')
+  const selected = document.querySelector('.job-row.is-selected')
+  if (!(preview instanceof HTMLElement) || !(selected instanceof HTMLElement)) return false
+  return preview.getBoundingClientRect().top - selected.getBoundingClientRect().bottom >= 15
+})
+const autoHeightLimit = await comparisonPage.locator('.result-preview').evaluate((preview) => {
+  const selected = document.querySelector('.job-row.is-selected')
+  if (!(selected instanceof HTMLElement)) return null
+  const previewBox = preview.getBoundingClientRect()
+  const selectedBox = selected.getBoundingClientRect()
+  return { gap: previewBox.top - selectedBox.bottom, previewHeight: previewBox.height }
+})
+if (!autoHeightLimit || autoHeightLimit.gap < 15) {
+  throw new Error(`Automatic preview resizing should stop below the selected file: ${JSON.stringify(autoHeightLimit)}`)
+}
 await comparisonPage.setViewportSize({ width: 1440, height: 1050 })
+await comparisonPage.keyboard.press('Escape')
+await comparisonPage.waitForFunction(() => !document.querySelector('.result-preview'))
 const comparisonRow = comparisonPage.locator('.job-row').first()
 await comparisonRow.hover()
 await comparisonPage.locator('.result-preview .comparison-image-stage').first().waitFor()
 if (!(await comparisonPage.locator('.result-preview').getAttribute('class'))?.includes('is-transient')) throw new Error('Whole-row hover should open the comparison preview')
+const transientComparisonChrome = await comparisonPage.locator('.result-preview').evaluate((preview) => ({
+  height: preview.offsetHeight,
+  mainHeader: getComputedStyle(preview.querySelector(':scope > header')).display,
+  qualityHeaders: Array.from(preview.querySelectorAll('.comparison-card > header')).map((header) => getComputedStyle(header).display),
+}))
+if (Math.abs(transientComparisonChrome.height - 220) > 2 || transientComparisonChrome.mainHeader !== 'none' || transientComparisonChrome.qualityHeaders.some((display) => display !== 'none')) {
+  throw new Error(`Transient comparison should show only file content at minimum height: ${JSON.stringify(transientComparisonChrome)}`)
+}
 await comparisonPage.waitForFunction(() => Array.from(document.querySelectorAll('.comparison-image-stage img')).every(
   (image) => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0,
 ))
@@ -579,7 +721,40 @@ if (initialComparisonGeometry.some((image) => !image
   || Math.abs(image.verticalCenterGap) > 1)) {
   throw new Error(`All quality previews should open at 100% centered on the file: ${JSON.stringify(initialComparisonGeometry)}`)
 }
-if ((await comparisonPage.locator('.comparison-card > header button').count()) !== 3) throw new Error('Comparison downloads are missing')
+const comparisonKinds = await comparisonPage.locator('.comparison-card').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-comparison-kind')))
+if (comparisonKinds.join('|') !== 'original|extreme|balanced') throw new Error(`Comparison order should be original, extreme and balanced: ${comparisonKinds.join(' | ')}`)
+if ((await comparisonPage.locator('.comparison-card > header button').count()) !== 2) throw new Error('The two compressed comparison downloads are missing')
+const originalComparisonHeader = await comparisonPage.locator('.comparison-card.is-original > header').evaluate((header) => {
+  const label = header.querySelector('.is-original-label')
+  return {
+    label: label?.textContent?.trim() ?? '',
+    color: label ? getComputedStyle(label).color : '',
+    mutedColor: getComputedStyle(document.querySelector('.preview-source-size')).color,
+    buttonCount: header.querySelectorAll('button').length,
+    iconCount: header.querySelectorAll('.comparison-download-icon').length,
+  }
+})
+if (originalComparisonHeader.label !== '原始文件' || originalComparisonHeader.color !== originalComparisonHeader.mutedColor || originalComparisonHeader.buttonCount !== 0 || originalComparisonHeader.iconCount !== 0) {
+  throw new Error(`Original comparison should be a gray, non-downloadable reference: ${JSON.stringify(originalComparisonHeader)}`)
+}
+const checkerboardBackground = await comparisonPage.locator('.comparison-image-stage').evaluateAll((stages) => stages.map((stage) => ({
+  image: getComputedStyle(stage).backgroundImage,
+  size: getComputedStyle(stage).backgroundSize,
+})))
+if (checkerboardBackground.length !== 3 || checkerboardBackground.some((background) => background.image === 'none' || background.size !== '16px 16px, 16px 16px')) {
+  throw new Error(`Image previews should use the gray-white transparency grid: ${JSON.stringify(checkerboardBackground)}`)
+}
+await comparisonPage.locator('.topbar-actions > .icon-button').click()
+await comparisonPage.waitForFunction(() => document.documentElement.dataset.theme === 'dark')
+const darkCheckerboard = await comparisonPage.locator('.comparison-image-stage').first().evaluate((stage) => {
+  const style = getComputedStyle(stage)
+  return { color: style.backgroundColor, image: style.backgroundImage }
+})
+if (darkCheckerboard.color !== 'rgb(34, 38, 45)' || !darkCheckerboard.image.includes('rgb(54, 60, 70)')) {
+  throw new Error(`Dark mode should use a subdued transparency grid: ${JSON.stringify(darkCheckerboard)}`)
+}
+await comparisonPage.locator('.topbar-actions > .icon-button').click()
+await comparisonPage.waitForFunction(() => document.documentElement.dataset.theme === 'light')
 const previewHeaderLayout = await comparisonPage.locator('.result-preview > header').evaluate((header) => {
   const toolbar = header.querySelector('.comparison-toolbar')?.getBoundingClientRect()
   const close = header.querySelector('.preview-close')?.getBoundingClientRect()
@@ -604,28 +779,75 @@ if (
 ) {
   throw new Error(`Zoom controls and close action should share the title bar without helper copy: ${JSON.stringify(previewHeaderLayout)}`)
 }
-const comparisonButtons = await comparisonPage.locator('.comparison-card > header').evaluateAll((headers) => headers.map((header) => {
-  const button = header.querySelector('button')?.getBoundingClientRect()
+if (await comparisonPage.locator('.preview-height-actions').count()) {
+  throw new Error('The resize grip should not have side actions')
+}
+const zoomChromeAtRest = await comparisonPage.locator('.comparison-toolbar > button, .comparison-toolbar .custom-select-trigger').evaluateAll((controls) => controls.map((control) => ({
+  border: getComputedStyle(control).borderTopColor,
+  background: getComputedStyle(control).backgroundColor,
+})))
+if (zoomChromeAtRest.some((control) => control.border !== 'rgba(0, 0, 0, 0)' || control.background !== 'rgba(0, 0, 0, 0)')) {
+  throw new Error(`Zoom controls should have no resting chrome: ${JSON.stringify(zoomChromeAtRest)}`)
+}
+const zoomOutControl = comparisonPage.locator('.comparison-toolbar > button').first()
+await zoomOutControl.hover()
+await comparisonPage.waitForTimeout(180)
+const zoomOutHoverChrome = await zoomOutControl.evaluate((control) => ({
+  border: getComputedStyle(control).borderTopColor,
+  background: getComputedStyle(control).backgroundColor,
+}))
+if (zoomOutHoverChrome.border === 'rgba(0, 0, 0, 0)' || zoomOutHoverChrome.background === 'rgba(0, 0, 0, 0)') {
+  throw new Error(`Zoom button chrome should appear on hover: ${JSON.stringify(zoomOutHoverChrome)}`)
+}
+const zoomTrigger = comparisonPage.locator('.comparison-toolbar .custom-select-trigger')
+await zoomTrigger.hover()
+await comparisonPage.waitForTimeout(180)
+const zoomTriggerHoverChrome = await zoomTrigger.evaluate((control) => ({
+  border: getComputedStyle(control).borderTopColor,
+  background: getComputedStyle(control).backgroundColor,
+}))
+if (zoomTriggerHoverChrome.border === 'rgba(0, 0, 0, 0)' || zoomTriggerHoverChrome.background === 'rgba(0, 0, 0, 0)') {
+  throw new Error(`Zoom selector chrome should appear on hover: ${JSON.stringify(zoomTriggerHoverChrome)}`)
+}
+const comparisonButtons = await comparisonPage.locator('.comparison-card:not(.is-original) > header').evaluateAll((headers) => headers.map((header) => {
+  const buttonElement = header.querySelector('.comparison-download-row')
+  const button = buttonElement?.getBoundingClientRect()
   const size = header.querySelector('.comparison-size')
-  const quality = header.querySelector('.comparison-quality')
   const ratio = header.querySelector('.comparison-ratio')
+  const icon = header.querySelector('.comparison-download-icon')
   const sizeBox = size?.getBoundingClientRect()
-  const qualityBox = quality?.getBoundingClientRect()
   const ratioBox = ratio?.getBoundingClientRect()
-  return button && size && quality && ratio && sizeBox && qualityBox && ratioBox ? {
+  const headerBox = header.getBoundingClientRect()
+  const sizeCenter = (sizeBox.top + sizeBox.bottom) / 2
+  const ratioCenter = (ratioBox.top + ratioBox.bottom) / 2
+  const headerCenter = (headerBox.top + headerBox.bottom) / 2
+  return buttonElement && button && size && ratio && icon && sizeBox && ratioBox ? {
     width: button.width,
     height: button.height,
-    beforeTitle: button.right <= sizeBox.left,
-    sameLine: Math.max(sizeBox.bottom, qualityBox.bottom, ratioBox.bottom) - Math.min(sizeBox.bottom, qualityBox.bottom, ratioBox.bottom) <= 2,
+    fillsHeader: Math.abs(button.width - headerBox.width) <= 1 && Math.abs(button.height - headerBox.height) <= 1,
+    sizeCenterGap: Math.abs(sizeCenter - headerCenter),
+    ratioOffset: ratioCenter - sizeCenter,
     compressedOnly: !size.textContent?.includes('→'),
     ratioAfterSize: ratioBox.left >= sizeBox.right,
     sizeFont: parseFloat(getComputedStyle(size).fontSize),
-    qualityFont: parseFloat(getComputedStyle(quality).fontSize),
+    ratioFont: parseFloat(getComputedStyle(ratio).fontSize),
+    qualityCount: header.querySelectorAll('.comparison-quality').length,
+    iconOpacity: getComputedStyle(icon).opacity,
+    background: getComputedStyle(buttonElement).backgroundColor,
   } : null
 }))
-if (comparisonButtons.some((button) => !button || button.width > 25 || button.height > 25 || !button.beforeTitle || !button.sameLine || !button.compressedOnly || !button.ratioAfterSize || button.sizeFont <= button.qualityFont)) {
-  throw new Error(`Comparison cards should show quality, compressed size and ratio on one line: ${JSON.stringify(comparisonButtons)}`)
+if (comparisonButtons.length !== 2 || comparisonButtons.some((button) => !button || button.height > 35 || !button.fillsHeader || button.sizeCenterGap > 1 || Math.abs(button.ratioOffset - 1) > 0.6 || !button.compressedOnly || !button.ratioAfterSize || Math.abs(button.sizeFont - button.ratioFont) > 0.5 || button.qualityCount !== 0 || button.iconOpacity !== '0' || button.background !== 'rgba(0, 0, 0, 0)')) {
+  throw new Error(`Comparison download rows should be compact, label-free and fully clickable: ${JSON.stringify(comparisonButtons)}`)
 }
+const firstComparisonDownloadRow = comparisonPage.locator('.comparison-card:not(.is-original) .comparison-download-row').first()
+await firstComparisonDownloadRow.hover()
+await comparisonPage.waitForTimeout(180)
+if (Number(await firstComparisonDownloadRow.locator('.comparison-download-icon').evaluate((icon) => getComputedStyle(icon).opacity)) < 0.9) throw new Error('Comparison download icon should appear on hover')
+const cardDownloadEvent = comparisonPage.waitForEvent('download')
+await firstComparisonDownloadRow.click()
+const cardDownload = await cardDownloadEvent
+if (cardDownload.suggestedFilename() !== 'compreesor-fixture-极限-压缩.png') throw new Error(`The full comparison info row should download its file: ${cardDownload.suggestedFilename()}`)
+await comparisonPage.screenshot({ path: '/tmp/compreesor-pinned-comparison.png', fullPage: false })
 const wheelStageBox = await comparisonPage.locator('.comparison-image-stage').first().boundingBox()
 const wheelImageBefore = await comparisonPage.locator('.comparison-image-stage img').first().boundingBox()
 if (!wheelStageBox || !wheelImageBefore) throw new Error('Comparison wheel-zoom target is missing')
@@ -658,7 +880,7 @@ if (zoomedOutTransforms.some((transform) => !transform?.includes('scale(0.75)'))
 }
 const zoomSelect = comparisonPage.locator('.comparison-toolbar select')
 const zoomOptions = await zoomSelect.locator('option').allInnerTexts()
-if (!zoomOptions.includes('200%') || !zoomOptions.includes('全部显示')) throw new Error(`Common zoom options are incomplete: ${zoomOptions.join(' | ')}`)
+if (zoomOptions[0] !== '全部显示' || !zoomOptions.includes('200%')) throw new Error(`Show-all should be the first zoom option: ${zoomOptions.join(' | ')}`)
 await zoomSelect.selectOption('2')
 const doubledTransforms = await comparisonPage.locator('.comparison-image-stage img').evaluateAll((images) => images.map((image) => image.getAttribute('style')))
 if (doubledTransforms.some((transform) => !transform?.includes('scale(2)'))) throw new Error(`200% zoom should apply to all previews: ${JSON.stringify(doubledTransforms)}`)
@@ -694,14 +916,79 @@ await comparisonPage.waitForFunction(() => document.querySelector('.result-previ
 const previewBeforeResize = await comparisonPage.locator('.result-preview').boundingBox()
 const resizeHandle = await comparisonPage.locator('.preview-resize-handle').boundingBox()
 if (!previewBeforeResize || !resizeHandle) throw new Error('Preview resize handle is missing')
+const restingGrip = await comparisonPage.locator('.preview-resize-handle').evaluate((handle) => ({
+  color: getComputedStyle(handle, '::after').backgroundColor,
+  opacity: getComputedStyle(handle, '::after').opacity,
+  gap: -(parseFloat(getComputedStyle(handle).top) + parseFloat(getComputedStyle(handle, '::after').top) + parseFloat(getComputedStyle(handle, '::after').height)),
+}))
 await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y + resizeHandle.height / 2)
+await comparisonPage.waitForFunction(() => document.querySelector('.result-preview')?.classList.contains('is-resize-active'))
+await comparisonPage.waitForTimeout(180)
+const activeGrip = await comparisonPage.locator('.preview-resize-handle').evaluate((handle) => ({
+  color: getComputedStyle(handle, '::after').backgroundColor,
+  opacity: getComputedStyle(handle, '::after').opacity,
+}))
+if (restingGrip.opacity === '0' || restingGrip.color === activeGrip.color || activeGrip.opacity === '0' || restingGrip.gap !== 8) {
+  throw new Error(`Resize grip should stay gray and turn blue when activated: ${JSON.stringify({ restingGrip, activeGrip })}`)
+}
+const headerResizeTarget = await comparisonPage.locator('.result-preview > header').evaluate((header) => {
+  const title = header.querySelector('.preview-title')?.getBoundingClientRect()
+  const actions = header.querySelector('.preview-header-actions')?.getBoundingClientRect()
+  const box = header.getBoundingClientRect()
+  if (!title || !actions || actions.left - title.right < 20) return null
+  return { x: (title.right + actions.left) / 2, y: (box.top + box.bottom) / 2 }
+})
+if (!headerResizeTarget) throw new Error('Preview title bar has no blank resize area')
+await comparisonPage.mouse.move(headerResizeTarget.x, headerResizeTarget.y)
 await comparisonPage.mouse.down()
-await comparisonPage.mouse.move(resizeHandle.x + resizeHandle.width / 2, resizeHandle.y - 80, { steps: 5 })
+await comparisonPage.mouse.move(headerResizeTarget.x, headerResizeTarget.y - 80, { steps: 5 })
+const draggingTransition = await comparisonPage.locator('.result-preview').evaluate((preview) => ({
+  resizing: preview.classList.contains('is-resizing'),
+  duration: getComputedStyle(preview).transitionDuration,
+}))
+if (!draggingTransition.resizing || draggingTransition.duration !== '0s') {
+  throw new Error(`Manual resizing should track the pointer without easing: ${JSON.stringify(draggingTransition)}`)
+}
 await comparisonPage.mouse.up()
 const previewAfterResize = await comparisonPage.locator('.result-preview').boundingBox()
 if (!previewAfterResize || previewAfterResize.height < previewBeforeResize.height + 60) {
-  throw new Error(`Dragging the top edge should increase preview height: ${JSON.stringify({ previewBeforeResize, previewAfterResize })}`)
+  throw new Error(`Dragging blank title-bar space should increase preview height: ${JSON.stringify({ previewBeforeResize, previewAfterResize })}`)
 }
+const heightTransition = await comparisonPage.locator('.result-preview').evaluate((preview) => ({
+  property: getComputedStyle(preview).transitionProperty,
+  duration: getComputedStyle(preview).transitionDuration,
+}))
+if (!heightTransition.property.includes('height') || heightTransition.duration === '0s') {
+  throw new Error(`Height presets should animate smoothly: ${JSON.stringify(heightTransition)}`)
+}
+let toggleHandle = await comparisonPage.locator('.preview-resize-handle').boundingBox()
+if (!toggleHandle) throw new Error('Resize grip disappeared before maximizing')
+await comparisonPage.mouse.dblclick(toggleHandle.x + toggleHandle.width / 2, toggleHandle.y + toggleHandle.height / 2)
+await comparisonPage.waitForFunction(() => Math.abs(document.querySelector('.result-preview').getBoundingClientRect().height - (window.innerHeight - 48)) <= 2)
+const maximizedPreview = await comparisonPage.locator('.result-preview').boundingBox()
+if (!maximizedPreview || Math.abs(maximizedPreview.height - (1050 - 48)) > 2) {
+  throw new Error(`Double-clicking the grip should maximize the preview: ${JSON.stringify(maximizedPreview)}`)
+}
+toggleHandle = await comparisonPage.locator('.preview-resize-handle').boundingBox()
+if (!toggleHandle) throw new Error('Resize grip disappeared before restoring height')
+await comparisonPage.mouse.dblclick(toggleHandle.x + toggleHandle.width / 2, toggleHandle.y + toggleHandle.height / 2)
+await comparisonPage.waitForFunction((target) => Math.abs(document.querySelector('.result-preview').getBoundingClientRect().height - target) <= 2, previewAfterResize.height)
+const restoredPreview = await comparisonPage.locator('.result-preview').boundingBox()
+if (!restoredPreview || Math.abs(restoredPreview.height - previewAfterResize.height) > 2) {
+  throw new Error(`A second grip double-click should restore the previous height: ${JSON.stringify({ previewAfterResize, restoredPreview })}`)
+}
+await comparisonPage.setViewportSize({ width: 1440, height: 760 })
+const manualHeightOverride = await comparisonPage.locator('.result-preview').evaluate((preview) => {
+  const selected = document.querySelector('.job-row.is-selected')
+  if (!(selected instanceof HTMLElement)) return null
+  const previewBox = preview.getBoundingClientRect()
+  const selectedBox = selected.getBoundingClientRect()
+  return { height: previewBox.height, overlap: selectedBox.bottom - previewBox.top }
+})
+if (!manualHeightOverride || Math.abs(manualHeightOverride.height - previewAfterResize.height) > 2 || manualHeightOverride.overlap <= 0) {
+  throw new Error(`Manual preview height should override the selected-file limit: ${JSON.stringify({ previewAfterResize, manualHeightOverride })}`)
+}
+await comparisonPage.setViewportSize({ width: 1440, height: 1050 })
 const keyboardDownloadEvent = comparisonPage.waitForEvent('download')
 await comparisonPage.keyboard.press('Enter')
 const keyboardDownload = await keyboardDownloadEvent
@@ -710,55 +997,94 @@ if (keyboardDownload.suggestedFilename() !== 'compreesor-fixture-够用-压缩.p
 }
 await comparisonPage.keyboard.press('Escape')
 await comparisonPage.waitForFunction(() => !document.querySelector('.result-preview'))
-const packageMenuToggle = comparisonPage.getByRole('button', { name: '选择打包档位' })
-await packageMenuToggle.click()
-const packageMenuLabels = await comparisonPage.getByRole('menuitem').allInnerTexts()
-if (packageMenuLabels.join('|') !== '全部下载|只打包极限|只打包够用|只打包无损') {
-  throw new Error(`ZIP quality choices are incomplete: ${packageMenuLabels.join(' | ')}`)
+const directBalancedEvent = comparisonPage.waitForEvent('download')
+await comparisonPage.getByRole('button', { name: new RegExp(`^下载 · 够用 · 省${expectedPackageSavings.balanced}%$`) }).click()
+const directBalanced = await directBalancedEvent
+if (directBalanced.suggestedFilename() !== 'compreesor-fixture-够用-压缩.png') {
+  throw new Error(`A single completed file should download directly: ${directBalanced.suggestedFilename()}`)
 }
-const extremeZipEvent = comparisonPage.waitForEvent('download')
-await comparisonPage.getByRole('menuitem', { name: '只打包极限' }).click()
-const extremeArchive = await extremeZipEvent
-const extremeArchivePath = await extremeArchive.path()
-if (!extremeArchivePath) throw new Error('Extreme-only ZIP download path is unavailable')
-const extremeArchiveEntries = Object.keys(unzipSync(await readFile(extremeArchivePath))).filter((name) => !name.endsWith('/'))
-if (extremeArchiveEntries.length !== 1 || !extremeArchiveEntries[0].startsWith('极限/')) {
-  throw new Error(`Extreme-only ZIP should contain only the extreme folder: ${JSON.stringify(extremeArchiveEntries)}`)
-}
-await comparisonPage.getByRole('button', { name: '再次下载' }).waitFor({ timeout: 8_000 })
-await packageMenuToggle.click()
-const comparisonZipEvent = comparisonPage.waitForEvent('download')
-await comparisonPage.getByRole('menuitem', { name: '全部下载' }).click()
-const comparisonArchive = await comparisonZipEvent
-const comparisonArchivePath = await comparisonArchive.path()
-if (!comparisonArchivePath) throw new Error('Three-quality ZIP download path is unavailable')
-const comparisonArchiveEntries = Object.keys(unzipSync(await readFile(comparisonArchivePath))).filter((name) => !name.endsWith('/'))
-const comparisonQualityFolderCounts = Object.fromEntries(['极限', '够用', '无损'].map((folder) => [
-  folder,
-  comparisonArchiveEntries.filter((name) => name.startsWith(`${folder}/`)).length,
-]))
-if (comparisonArchiveEntries.length !== 3 || Object.values(comparisonQualityFolderCounts).some((count) => count !== 1)) {
-  throw new Error(`Three-quality ZIP should contain one folder per quality: ${JSON.stringify({ comparisonArchiveEntries, comparisonQualityFolderCounts })}`)
-}
-await comparisonPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
+await comparisonPage.locator('.file-picker-input').setInputFiles('tests/fixture.svg')
 await comparisonPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 2,
   undefined,
   { timeout: 180_000 },
 )
 if (await comparisonPage.locator('.job-row.status-error').count()) throw new Error('Second sorting fixture failed')
+const aggregatePackageSavings = await comparisonPage.locator('.job-row.has-variants').evaluateAll((rows) => {
+  const totals = { original: 0, extreme: 0, balanced: 0 }
+  rows.forEach((row) => {
+    totals.original += Number(row.getAttribute('data-original-bytes'))
+    row.querySelectorAll('.variant-result-item').forEach((item) => {
+      const preset = item.getAttribute('data-preset')
+      if (preset === 'extreme' || preset === 'balanced') totals[preset] += Number(item.getAttribute('data-output-bytes'))
+    })
+  })
+  return {
+    extreme: Math.max(0, Math.round((1 - totals.extreme / totals.original) * 100)),
+    balanced: Math.max(0, Math.round((1 - totals.balanced / totals.original) * 100)),
+  }
+})
+const balancedZipEvent = comparisonPage.waitForEvent('download')
+await comparisonPage.getByRole('button', { name: new RegExp(`^打包下载 · 够用 · 省${aggregatePackageSavings.balanced}%$`) }).click()
+const balancedArchive = await balancedZipEvent
+const balancedArchivePath = await balancedArchive.path()
+if (!balancedArchivePath) throw new Error('Default balanced ZIP download path is unavailable')
+const balancedArchiveEntries = Object.keys(unzipSync(await readFile(balancedArchivePath))).filter((name) => !name.endsWith('/'))
+if (balancedArchiveEntries.length !== 2 || balancedArchiveEntries.some((name) => !name.startsWith('够用/'))) {
+  throw new Error(`Default parallel-quality ZIP should contain only the balanced folder: ${JSON.stringify(balancedArchiveEntries)}`)
+}
+await comparisonPage.getByRole('button', { name: '再次下载' }).waitFor({ timeout: 8_000 })
+const packageMenuToggle = comparisonPage.getByRole('button', { name: '选择打包档位' })
+await packageMenuToggle.click()
+const packageMenuLabels = await comparisonPage.getByRole('menuitem').allInnerTexts()
+if (packageMenuLabels.join('|') !== `只打包极限 · 省${aggregatePackageSavings.extreme}%|全部下载`) {
+  throw new Error(`ZIP quality choices are incomplete: ${packageMenuLabels.join(' | ')}`)
+}
+const extremeZipEvent = comparisonPage.waitForEvent('download')
+await comparisonPage.getByRole('menuitem', { name: `只打包极限 · 省${aggregatePackageSavings.extreme}%` }).click()
+const extremeArchive = await extremeZipEvent
+const extremeArchivePath = await extremeArchive.path()
+if (!extremeArchivePath) throw new Error('Extreme-only ZIP download path is unavailable')
+const extremeArchiveEntries = Object.keys(unzipSync(await readFile(extremeArchivePath))).filter((name) => !name.endsWith('/'))
+if (extremeArchiveEntries.length !== 2 || extremeArchiveEntries.some((name) => !name.startsWith('极限/'))) {
+  throw new Error(`Extreme-only ZIP should contain only the extreme folder: ${JSON.stringify(extremeArchiveEntries)}`)
+}
+await comparisonPage.getByRole('button', { name: '再次下载' }).waitFor({ timeout: 8_000 })
+await packageMenuToggle.click()
+const comparisonZipEvent = comparisonPage.waitForEvent('download')
+await comparisonPage.getByRole('menuitem', { name: '全部下载', exact: true }).click()
+const comparisonArchive = await comparisonZipEvent
+const comparisonArchivePath = await comparisonArchive.path()
+if (!comparisonArchivePath) throw new Error('Parallel-quality ZIP download path is unavailable')
+const comparisonArchiveEntries = Object.keys(unzipSync(await readFile(comparisonArchivePath))).filter((name) => !name.endsWith('/'))
+const comparisonQualityFolderCounts = Object.fromEntries(['极限', '够用'].map((folder) => [
+  folder,
+  comparisonArchiveEntries.filter((name) => name.startsWith(`${folder}/`)).length,
+]))
+if (comparisonArchiveEntries.length !== 4 || Object.values(comparisonQualityFolderCounts).some((count) => count !== 2) || comparisonArchiveEntries.some((name) => name.startsWith('无损/'))) {
+  throw new Error(`Parallel-quality ZIP should contain only extreme and balanced folders: ${JSON.stringify({ comparisonArchiveEntries, comparisonQualityFolderCounts })}`)
+}
 const sortedExtremeBytes = async () => comparisonPage.locator('.job-row .variant-result-item:first-child').evaluateAll(
   (items) => items.map((item) => Number(item.getAttribute('data-output-bytes'))),
 )
-const descendingExtremeBytes = await sortedExtremeBytes()
-if (descendingExtremeBytes.some((bytes, index) => index > 0 && descendingExtremeBytes[index - 1] < bytes)) {
-  throw new Error(`Extreme header should sort completed rows descending: ${descendingExtremeBytes.join(', ')}`)
+const sortedExtremeRatios = async () => comparisonPage.locator('.job-row .variant-result-item:first-child').evaluateAll(
+  (items) => items.map((item) => Number(item.getAttribute('data-compressed-ratio'))),
+)
+const descendingExtremeRatios = await sortedExtremeRatios()
+if (descendingExtremeRatios.some((ratio, index) => index > 0 && descendingExtremeRatios[index - 1] < ratio)) {
+  throw new Error(`Fourth quality-header state should sort compressed ratio descending: ${descendingExtremeRatios.join(', ')}`)
 }
-await comparisonPage.getByRole('button', { name: /按极限压缩后体积排序/ }).click()
+await comparisonPage.getByRole('button', { name: /按极限结果排序/ }).click()
 const ascendingExtremeBytes = await sortedExtremeBytes()
 if (ascendingExtremeBytes.some((bytes, index) => index > 0 && ascendingExtremeBytes[index - 1] > bytes)) {
-  throw new Error(`Extreme header should sort completed rows ascending: ${ascendingExtremeBytes.join(', ')}`)
+  throw new Error(`Quality-header cycle should return to size ascending: ${ascendingExtremeBytes.join(', ')}`)
 }
+await fileNameHeader.click()
+const ascendingFileNames = await comparisonPage.locator('.job-row .job-copy strong').allInnerTexts()
+if (ascendingFileNames.join('|') !== 'compreesor-fixture.png|fixture.svg') throw new Error(`File-name header should sort first characters ascending: ${ascendingFileNames.join(' | ')}`)
+await fileNameHeader.click()
+const descendingFileNames = await comparisonPage.locator('.job-row .job-copy strong').allInnerTexts()
+if (descendingFileNames.join('|') !== 'fixture.svg|compreesor-fixture.png') throw new Error(`File-name header should sort first characters descending: ${descendingFileNames.join(' | ')}`)
 await comparisonPage.screenshot({ path: '/tmp/compreesor-quality-table.png', fullPage: false })
 await comparisonPage.close()
 
@@ -768,6 +1094,9 @@ const single = await singleDownload
 if (single.suggestedFilename() !== 'compreesor-fixture-压缩.png') {
   throw new Error(`Single download should use Chinese compression suffix: ${single.suggestedFilename()}`)
 }
+
+await page.locator('.job-row.status-done').first().click()
+await page.locator('.result-preview.is-pinned').waitFor()
 
 await page.evaluate(() => {
   const footer = document.querySelector('.site-footer')
@@ -781,6 +1110,9 @@ await page.evaluate(() => {
 
 const zipDownload = page.waitForEvent('download')
 await packageButton.click()
+await page.locator('.result-preview.is-exiting').waitFor()
+if (await page.locator('.donate-popover').count()) throw new Error('Donation popover should wait until the preview exit finishes')
+await page.locator('.result-preview').waitFor({ state: 'detached' })
 const archive = await zipDownload
 const downloadedPackageButton = page.getByRole('button', { name: '已下载' })
 await downloadedPackageButton.waitFor()
@@ -879,19 +1211,21 @@ await page.screenshot({ path: '/tmp/compreesor-desktop.png', fullPage: true })
 
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 })
 await mobile.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
-await mobile.getByRole('heading', { name: '输出偏好' }).waitFor()
+await mobile.locator('.preferences').waitFor()
 await mobile.locator('.preferences select').nth(0).selectOption('balanced')
 const bodyWidth = await mobile.evaluate(() => document.body.scrollWidth)
 if (bodyWidth > 390) throw new Error(`Mobile layout overflows: ${bodyWidth}px`)
 await mobile.screenshot({ path: '/tmp/compreesor-mobile.png', fullPage: true })
 
-await mobile.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
+await mobile.locator('.file-picker-input').setInputFiles('/tmp/compreesor-fixture.png')
 await mobile.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 1, undefined, { timeout: 180_000 })
 const mobileListWidth = await mobile.evaluate(() => document.body.scrollWidth)
 if (mobileListWidth > 390) throw new Error(`Mobile list layout overflows: ${mobileListWidth}px`)
 if (await mobile.locator('.job-progress').first().evaluate((element) => getComputedStyle(element).display) !== 'none') {
   throw new Error('Progress bar should hide when mobile space is limited')
 }
+await mobile.locator('.preview-close').click()
+await mobile.waitForFunction(() => !document.querySelector('.result-preview'))
 const mobileDonateTrigger = mobile.getByRole('button', { name: '打赏作者' })
 await mobileDonateTrigger.click()
 await mobile.locator('.donate-popover').waitFor()
@@ -910,7 +1244,7 @@ await mobile.screenshot({ path: '/tmp/compreesor-mobile-list.png', fullPage: tru
 
 await mobile.locator('.topbar-actions .language-button').click()
 await mobile.getByRole('menuitemradio', { name: 'English' }).click()
-await mobile.getByRole('heading', { name: 'Output preferences' }).waitFor()
+await mobile.locator('.preference-compression').waitFor()
 const themeBefore = await mobile.evaluate(() => document.documentElement.dataset.theme)
 await mobile.locator('.topbar-actions > .icon-button').click()
 if (await mobile.evaluate(() => document.documentElement.dataset.theme) === themeBefore) throw new Error('Theme did not toggle')
@@ -923,8 +1257,12 @@ await guidePage.getByRole('button', { name: '使用说明' }).click()
 await guidePage.getByRole('dialog').waitFor()
 await guidePage.getByRole('link', { name: '作者主页' }).waitFor()
 await guidePage.getByRole('button', { name: '关闭使用说明' }).click()
-await guidePage.getByRole('button', { name: 'CLI 命令行' }).click()
-await guidePage.getByRole('dialog', { name: '安装 CLI 批量压缩' }).waitFor()
+await guidePage.getByRole('button', { name: 'CLI 命令行和客户端' }).click()
+await guidePage.getByRole('dialog', { name: 'CLI 命令行与客户端' }).waitFor()
+const desktopDownload = guidePage.getByRole('link', { name: '下载 DMG' })
+if (await desktopDownload.getAttribute('href') !== 'https://github.com/yanghaoleng/compreesor/releases/download/v1.2.1/Compreesor-1.2.1-arm64.dmg') {
+  throw new Error('Electron client download should point to the current signed release package')
+}
 await guidePage.getByRole('button', { name: '复制安装命令' }).click()
 await guidePage.getByText('已复制安装命令', { exact: true }).waitFor()
 const toastSpacing = await guidePage.locator('.app-toast').evaluate((toast) => {
@@ -944,7 +1282,7 @@ if (!(await guidePage.getByRole('dialog').innerText()).includes('--preset extrem
 const dropPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await dropPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await dropPage.locator('.preferences select').nth(0).selectOption('balanced')
-await dropPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
+await dropPage.locator('.file-picker-input').setInputFiles('/tmp/compreesor-fixture.png')
 await dropPage.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 1, undefined, { timeout: 180_000 })
 const transfer = await dropPage.evaluateHandle(() => new DataTransfer())
 const fixtureBase64 = (await readFile('/tmp/compreesor-fixture.png')).toString('base64')
@@ -966,7 +1304,7 @@ if (!(await audioPage.locator('.preferences select').nth(2).locator('option[valu
 }
 await audioPage.locator('.preferences select').nth(2).selectOption('mp3')
 if (await audioPage.locator('.alpha-switch').count()) throw new Error('Alpha switch should be removed')
-await audioPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-video.mp4')
+await audioPage.locator('.file-picker-input').setInputFiles('/tmp/compreesor-video.mp4')
 await audioPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
   undefined,
@@ -991,7 +1329,7 @@ const alphaPage = await browser.newPage({ viewport: { width: 1100, height: 800 }
 await alphaPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await alphaPage.locator('.preferences select').nth(0).selectOption('balanced')
 await alphaPage.locator('.preferences select').nth(2).selectOption('mov-alpha')
-await alphaPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-alpha.mov')
+await alphaPage.locator('.file-picker-input').setInputFiles('/tmp/compreesor-alpha.mov')
 await alphaPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
   undefined,
@@ -1013,7 +1351,7 @@ const jpegPage = await browser.newPage({ viewport: { width: 1100, height: 800 } 
 await jpegPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await jpegPage.locator('.preferences select').nth(0).selectOption('extreme')
 await jpegPage.locator('.preferences select').nth(1).selectOption('jpeg')
-await jpegPage.locator('input[type="file"]').setInputFiles('/tmp/compreesor-fixture.png')
+await jpegPage.locator('.file-picker-input').setInputFiles('/tmp/compreesor-fixture.png')
 await jpegPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
   undefined,
@@ -1021,6 +1359,11 @@ await jpegPage.waitForFunction(
 )
 if (await jpegPage.locator('.job-row.status-error').count()) {
   throw new Error(`JPG conversion failed: ${await jpegPage.locator('.job-list').innerText()}`)
+}
+await jpegPage.locator('.result-preview.is-pinned').waitFor()
+const singleQualityComparison = await jpegPage.locator('.comparison-card').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-comparison-kind')))
+if (singleQualityComparison.join('|') !== 'original|extreme') {
+  throw new Error(`A single file and single compression result should compare original and output: ${singleQualityComparison.join(' | ')}`)
 }
 const jpegRow = await jpegPage.locator('.job-row').first().innerText()
 if ((await jpegPage.locator('.job-state span[title="JPEG"]').count()) !== 1) throw new Error(`Expected JPEG output, received: ${jpegRow}`)
@@ -1034,7 +1377,7 @@ if (jpegImage.suggestedFilename() !== 'compreesor-fixture-压缩.jpg') {
 const svgPage = await browser.newPage({ viewport: { width: 1100, height: 800 } })
 await svgPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await svgPage.locator('.preferences select').nth(0).selectOption('balanced')
-await svgPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
+await svgPage.locator('.file-picker-input').setInputFiles('tests/fixture.svg')
 await svgPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
   undefined,
@@ -1044,7 +1387,7 @@ if (await svgPage.locator('.job-row.status-error').count()) {
   throw new Error(`SVG compression failed: ${await svgPage.locator('.job-list').innerText()}`)
 }
 if ((await svgPage.locator('.thumbnail img').count()) !== 1) throw new Error('SVG thumbnail is missing')
-const svgRatio = svgPage.locator('.result-ratio')
+const svgRatio = svgPage.locator('.job-row .result-ratio')
 if (await svgRatio.getAttribute('data-animation') !== 'calligraph-number-in') throw new Error('Calligraph number entrance animation is missing')
 const ratioAnimation = await svgRatio.getAttribute('data-animation')
 const targetRatio = Number(await svgRatio.getAttribute('data-target-ratio'))
@@ -1069,7 +1412,7 @@ const svgPngPage = await browser.newPage({ viewport: { width: 1100, height: 800 
 await svgPngPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await svgPngPage.locator('.preferences select').nth(0).selectOption('balanced')
 await svgPngPage.locator('.preferences select').nth(1).selectOption('png')
-await svgPngPage.locator('input[type="file"]').setInputFiles('tests/fixture.svg')
+await svgPngPage.locator('.file-picker-input').setInputFiles('tests/fixture.svg')
 await svgPngPage.waitForFunction(
   () => document.querySelectorAll('.job-row.status-done, .job-row.status-error').length === 1,
   undefined,
@@ -1086,7 +1429,7 @@ if (svgPng.suggestedFilename() !== 'fixture-压缩.png') throw new Error('SVG to
 const geometryPage = await browser.newPage({ viewport: { width: 1280, height: 900 } })
 await geometryPage.goto(`${baseUrl.split('?')[0]}?lang=zh`, { waitUntil: 'networkidle' })
 await geometryPage.locator('.preferences select').nth(1).selectOption('png')
-await geometryPage.locator('input[type="file"]').setInputFiles({
+await geometryPage.locator('.file-picker-input').setInputFiles({
   name: 'wide-geometry.svg',
   mimeType: 'image/svg+xml',
   buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="3000" height="900" viewBox="0 0 3000 900"><rect width="3000" height="900" fill="#00c853"/><rect width="300" height="900" fill="#f00000"/><rect x="2700" width="300" height="900" fill="#0000f0"/></svg>'),
@@ -1117,8 +1460,22 @@ const geometryResults = await geometryPage.locator('.comparison-image-stage img'
   return { width: image.naturalWidth, height: image.naturalHeight, left, right }
 })))
 const geometryDimensions = geometryResults.map(({ width, height }) => [width, height])
-if (JSON.stringify(geometryDimensions) !== JSON.stringify([[1600, 480], [2560, 768], [2560, 768]])) {
+if (JSON.stringify(geometryDimensions) !== JSON.stringify([[3000, 900], [1600, 480], [2560, 768]])) {
   throw new Error(`Quality resizing should only scale the complete image: ${JSON.stringify(geometryDimensions)}`)
+}
+await geometryPage.waitForFunction(() => document.querySelectorAll('.comparison-dimensions').length === 3)
+const dimensionLabels = await geometryPage.locator('.comparison-dimensions').evaluateAll((labels) => labels.map((label) => ({
+  text: label.textContent?.replace(/\s+/g, ''),
+  color: getComputedStyle(label).color,
+  left: label.getBoundingClientRect().left,
+  ratioLeft: label.parentElement?.querySelector('.comparison-ratio')?.getBoundingClientRect().left,
+})))
+if (
+  dimensionLabels.map((label) => label.text).join('|') !== '3000×900|1600×480|2560×768'
+  || dimensionLabels[0].color === dimensionLabels[1].color
+  || dimensionLabels.slice(1).some((label) => label.ratioLeft === undefined || label.left >= label.ratioLeft)
+) {
+  throw new Error(`Changed dimensions should appear before the ratio with compressed sizes in orange: ${JSON.stringify(dimensionLabels)}`)
 }
 if (geometryResults.some(({ left, right }) => left[0] < 200 || left[2] > 50 || right[2] < 200 || right[0] > 50)) {
   throw new Error(`Quality resizing cropped or replaced edge content: ${JSON.stringify(geometryResults)}`)
@@ -1167,6 +1524,7 @@ console.log(JSON.stringify({
   actionOrder: [clearBox.x, addBox.x, zipBox.x],
   desktopScreenshot: '/tmp/compreesor-desktop.png',
   qualityTableScreenshot: '/tmp/compreesor-quality-table.png',
+  pinnedComparisonScreenshot: '/tmp/compreesor-pinned-comparison.png',
   pinnedDonateScreenshot: '/tmp/compreesor-donate-pinned.png',
   mobileScreenshot: '/tmp/compreesor-mobile.png',
   mobileListScreenshot: '/tmp/compreesor-mobile-list.png',

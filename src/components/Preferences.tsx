@@ -32,7 +32,6 @@ export function Preferences({
     { value: 'all', label: messages.allQualities },
     { value: 'extreme', label: messages.extreme },
     { value: 'balanced', label: messages.balanced },
-    { value: 'lossless', label: messages.lossless },
     { value: 'target-100k', label: messages.target100k },
     { value: 'target-500k', label: messages.target500k },
     { value: 'target-2m', label: messages.target2m },
@@ -55,8 +54,7 @@ export function Preferences({
   ]
 
   return (
-    <section className="preferences" aria-labelledby="page-title">
-      <h1 id="page-title">{messages.outputPreferences}</h1>
+    <section className="preferences" aria-label={messages.outputPreferences}>
       <div className="preference-field preference-compression">
         <span>{messages.compressionLevel}</span>
         <CustomSelect

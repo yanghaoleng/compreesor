@@ -8,11 +8,11 @@ const SPRING_SCALE_IN = {
   initialDelayMax: 400,
 } as const
 
-export function AnimatedPercentage({ value, className = '' }: { value: number; className?: string }) {
+export function AnimatedPercentage({ value, className = '', neutral }: { value: number; className?: string; neutral?: boolean }) {
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   return (
     <Calligraph
-      className={`result-ratio${value === 100 ? ' is-neutral' : ''}${className ? ` ${className}` : ''}`}
+      className={`result-ratio${(neutral ?? value === 100) ? ' is-neutral' : ''}${className ? ` ${className}` : ''}`}
       data-target-ratio={value}
       data-animation="calligraph-number-in"
       variant="number"

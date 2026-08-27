@@ -13,6 +13,8 @@ import { AnimatedPercentage } from './AnimatedText'
 import { CustomSelect } from './CustomSelect'
 
 const COMMON_ZOOM_LEVELS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
+const MIN_PREVIEW_HEIGHT = 220
+type PreviewDimensions = { width: number; height: number }
 
 function clampScale(scale: number) {
   return Math.max(0.25, Math.min(5, scale))
@@ -38,12 +40,18 @@ type PreviewPanelProps = {
 }
 
 export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, exiting, onClose, onSelect, onDownload, onHeightChange }: PreviewPanelProps) {
-  const [height, setHeight] = useState<number | null>(rememberedHeight)
+  const initialHeight = pinned ? rememberedHeight : MIN_PREVIEW_HEIGHT
+  const [height, setHeight] = useState<number | null>(initialHeight)
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 })
   const [fitToView, setFitToView] = useState(false)
+  const [previewDimensions, setPreviewDimensions] = useState<Record<string, PreviewDimensions>>({})
+  const [resizeAffordanceActive, setResizeAffordanceActive] = useState(false)
+  const [isResizing, setIsResizing] = useState(false)
   const panelRef = useRef<HTMLElement>(null)
-  const heightRef = useRef<number | null>(rememberedHeight)
-  const resizeRef = useRef<{ pointerId: number; clientY: number; height: number } | null>(null)
+  const heightRef = useRef<number | null>(initialHeight)
+  const heightBeforeMaximizeRef = useRef<number | null>(null)
+  const manuallyResizedRef = useRef(false)
+  const resizeRef = useRef<{ pointerId: number; clientY: number; height: number; moved: boolean } | null>(null)
   const dragRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null)
   const index = jobs.findIndex((candidate) => candidate.id === job.id)
   const supportsImageView = (job.kind === 'image' || job.kind === 'gif')
@@ -60,10 +68,39 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
     resizeRef.current = null
   }, [job.id])
 
+  const rememberDimensions = useCallback((key: string, width: number, height: number) => {
+    if (width <= 0 || height <= 0) return
+    setPreviewDimensions((current) => {
+      const previous = current[key]
+      if (previous?.width === width && previous.height === height) return current
+      return { ...current, [key]: { width, height } }
+    })
+  }, [])
+
   useEffect(() => {
-    heightRef.current = rememberedHeight
-    setHeight(rememberedHeight)
-  }, [rememberedHeight])
+    const nextHeight = pinned ? rememberedHeight : MIN_PREVIEW_HEIGHT
+    heightRef.current = nextHeight
+    setHeight(nextHeight)
+  }, [pinned, rememberedHeight])
+
+  useEffect(() => {
+    const keepBelowSelectedFile = () => {
+      if (manuallyResizedRef.current) return
+      const panel = panelRef.current
+      const selectedRow = document.querySelector<HTMLElement>(`[data-job-id="${CSS.escape(job.id)}"]`)
+      if (!panel || !selectedRow) return
+      const selectedBottom = selectedRow.getBoundingClientRect().bottom
+      const availableHeight = Math.max(MIN_PREVIEW_HEIGHT, Math.floor(window.innerHeight - selectedBottom - 16))
+      const currentHeight = heightRef.current ?? panel.getBoundingClientRect().height
+      if (currentHeight <= availableHeight) return
+      heightRef.current = availableHeight
+      setHeight(availableHeight)
+    }
+
+    const handleWindowResize = () => window.requestAnimationFrame(keepBelowSelectedFile)
+    window.addEventListener('resize', handleWindowResize)
+    return () => window.removeEventListener('resize', handleWindowResize)
+  }, [job.id])
 
   useEffect(() => {
     const panel = panelRef.current
@@ -82,31 +119,94 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
     }
   }, [])
 
-  const beginResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const toggleMaxHeight = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault()
+    const panel = panelRef.current
+    if (!panel) return
+    manuallyResizedRef.current = true
+    const maximumHeight = Math.max(MIN_PREVIEW_HEIGHT, window.innerHeight - 48)
+    const currentHeight = panel.getBoundingClientRect().height
+    const currentTargetHeight = heightRef.current ?? currentHeight
+    const isMaximum = Math.abs(currentTargetHeight - maximumHeight) <= 2
+    let nextHeight = maximumHeight
+
+    if (isMaximum) {
+      nextHeight = Math.min(
+        heightBeforeMaximizeRef.current ?? rememberedHeight ?? MIN_PREVIEW_HEIGHT,
+        maximumHeight,
+      )
+    } else {
+      heightBeforeMaximizeRef.current = currentHeight
+    }
+
+    heightRef.current = nextHeight
+    setHeight(nextHeight)
+    onHeightChange(nextHeight)
+  }, [onHeightChange, rememberedHeight])
+
+  const beginResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
+    manuallyResizedRef.current = true
+    setIsResizing(true)
+    setResizeAffordanceActive(true)
     event.currentTarget.setPointerCapture(event.pointerId)
     resizeRef.current = {
       pointerId: event.pointerId,
       clientY: event.clientY,
       height: panelRef.current?.getBoundingClientRect().height ?? 420,
+      moved: false,
     }
   }, [])
 
-  const moveResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const moveResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const resize = resizeRef.current
     if (!resize || resize.pointerId !== event.pointerId) return
-    const maxHeight = Math.max(220, window.innerHeight - 48)
-    const nextHeight = Math.max(220, Math.min(maxHeight, resize.height + resize.clientY - event.clientY))
+    if (!resize.moved) {
+      if (Math.abs(event.clientY - resize.clientY) <= 3) return
+      resize.moved = true
+      heightBeforeMaximizeRef.current = null
+    }
+    const maxHeight = Math.max(MIN_PREVIEW_HEIGHT, window.innerHeight - 48)
+    const nextHeight = Math.max(MIN_PREVIEW_HEIGHT, Math.min(maxHeight, resize.height + resize.clientY - event.clientY))
     heightRef.current = nextHeight
     setHeight(nextHeight)
   }, [])
 
-  const endResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const endResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (resizeRef.current?.pointerId !== event.pointerId) return
     resizeRef.current = null
-    if (heightRef.current !== null) onHeightChange(heightRef.current)
+    setIsResizing(false)
+    setResizeAffordanceActive(false)
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (heightRef.current !== null) onHeightChange(heightRef.current)
   }, [onHeightChange])
+
+  const isHeaderControl = useCallback((target: EventTarget | null) => (
+    target instanceof Element && Boolean(target.closest('.preview-title, .preview-header-actions'))
+  ), [])
+
+  const beginHeaderResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (isHeaderControl(event.target)) return
+    beginResize(event)
+  }, [beginResize, isHeaderControl])
+
+  const moveHeaderResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (resizeRef.current) {
+      moveResize(event)
+      return
+    }
+    setResizeAffordanceActive(!isHeaderControl(event.target))
+  }, [isHeaderControl, moveResize])
+
+  const endHeaderResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (!resizeRef.current) return
+    endResize(event)
+  }, [endResize])
+
+  const toggleHeaderMaxHeight = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    if (isHeaderControl(event.target)) return
+    toggleMaxHeight(event)
+  }, [isHeaderControl, toggleMaxHeight])
 
   const beginDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button, select'))) return
@@ -212,15 +312,26 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
   const zoomValue = fitToView ? 'fit' : String(view.scale)
   const isCommonZoomLevel = COMMON_ZOOM_LEVELS.includes(view.scale)
   const zoomOptions = [
+    { value: 'fit', label: messages.fitPreview },
     ...(!fitToView && !isCommonZoomLevel
       ? [{ value: zoomValue, label: `${Math.round(view.scale * 100)}%` }]
       : []),
     ...COMMON_ZOOM_LEVELS.map((scale) => ({ value: String(scale), label: `${Math.round(scale * 100)}%` })),
-    { value: 'fit', label: messages.fitPreview },
   ]
+  const showComparison = job.variants.length > 1 || (jobs.length === 1 && job.variants.length === 1)
+  const originalDimensions = previewDimensions[job.originalUrl]
+  const dimensionsChanged = (variant: ResultVariant) => {
+    const compressed = previewDimensions[variant.url]
+    return Boolean(
+      originalDimensions
+      && compressed
+      && (originalDimensions.width !== compressed.width || originalDimensions.height !== compressed.height),
+    )
+  }
+  const hasDimensionChange = job.variants.some(dimensionsChanged)
   return (
     <aside
-      className={`result-preview${job.variants.length > 1 ? ' is-comparison' : ''}${height !== null ? ' is-resized' : ''}${pinned ? ' is-pinned' : ' is-transient'}${exiting ? ' is-exiting' : ''}`}
+      className={`result-preview${showComparison ? ' is-comparison' : ''}${height !== null ? ' is-resized' : ''}${pinned ? ' is-pinned' : ' is-transient'}${exiting ? ' is-exiting' : ''}${resizeAffordanceActive ? ' is-resize-active' : ''}${isResizing ? ' is-resizing' : ''}`}
       ref={panelRef}
       style={height !== null ? { height: `${height}px` } : undefined}
       aria-label={`${messages.preview} ${job.file.name}`}
@@ -231,13 +342,30 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
         role="separator"
         aria-orientation="horizontal"
         aria-label={messages.resizePreview}
+        aria-valuemin={MIN_PREVIEW_HEIGHT}
+        aria-valuemax={Math.max(MIN_PREVIEW_HEIGHT, window.innerHeight - 48)}
+        aria-valuenow={Math.round(height ?? MIN_PREVIEW_HEIGHT)}
         title={messages.resizePreview}
+        onPointerEnter={() => setResizeAffordanceActive(true)}
+        onPointerLeave={() => {
+          if (!resizeRef.current) setResizeAffordanceActive(false)
+        }}
         onPointerDown={beginResize}
         onPointerMove={moveResize}
         onPointerUp={endResize}
         onPointerCancel={endResize}
+        onDoubleClick={toggleMaxHeight}
       />
-      <header>
+      <header
+        onPointerDown={beginHeaderResize}
+        onPointerMove={moveHeaderResize}
+        onPointerUp={endHeaderResize}
+        onPointerCancel={endHeaderResize}
+        onPointerLeave={() => {
+          if (!resizeRef.current) setResizeAffordanceActive(false)
+        }}
+        onDoubleClick={toggleHeaderMaxHeight}
+      >
         <div className="preview-title">
           <strong title={job.file.name}>{job.file.name}</strong>
           <span className="preview-source-size">{formatBytes(job.file.size)}</span>
@@ -261,50 +389,102 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
           </button>
         </div>
       </header>
-      {job.variants.length > 1 ? (
-        <div className="comparison-grid">
-          {job.variants.map((variant) => (
-            <article className="comparison-card" key={variant.preset}>
-              <header>
-                <button type="button" onClick={() => onDownload(job, variant)} aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}>
-                  <DownloadSimple size={13} weight="bold" />
-                </button>
-                <div className="comparison-summary">
-                  <span className="comparison-quality">{qualityLabel(variant.preset as QualityPreset, messages)}</span>
-                  <strong className="comparison-size">{formatBytes(variant.blob.size)}</strong>
-                  <AnimatedPercentage
-                    value={job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0}
-                    className="comparison-ratio"
-                  />
-                </div>
-              </header>
-              {job.kind === 'video' ? (
-                variant.outputLabel === 'MP3' ? (
-                  <audio src={variant.previewUrl ?? variant.url} controls />
+      {showComparison ? (
+        <div className={`comparison-grid${job.variants.length === 1 ? ' is-two-up' : ''}`}>
+          <article className="comparison-card is-original" data-comparison-kind="original">
+            <header>
+              <div className="comparison-download-row comparison-original-row" title={messages.originalFile}>
+                <span className="comparison-summary">
+                  <strong className="comparison-size">{formatBytes(job.file.size)}</strong>
+                  {hasDimensionChange && originalDimensions ? (
+                    <span className="comparison-dimensions is-original-dimensions">{originalDimensions.width} × {originalDimensions.height}</span>
+                  ) : null}
+                  <span className="comparison-ratio is-original-label">{messages.originalFile}</span>
+                </span>
+              </div>
+            </header>
+            {job.kind === 'video' ? (
+              <video
+                src={job.originalUrl}
+                controls
+                playsInline
+                onLoadedMetadata={(event) => rememberDimensions(job.originalUrl, event.currentTarget.videoWidth, event.currentTarget.videoHeight)}
+              />
+            ) : job.kind === 'pdf' ? (
+              <iframe src={pdfPreviewUrl(job.originalUrl, view.scale, fitToView)} title={`${job.file.name} ${messages.originalFile}`} />
+            ) : (
+              <div
+                className={`comparison-image-stage${fitToView ? ' is-fit' : ''}`}
+                onPointerDown={beginDrag}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                onWheel={wheel}
+              >
+                <img
+                  src={job.originalUrl}
+                  alt={`${job.file.name} ${messages.originalFile}`}
+                  draggable={false}
+                  onLoad={(event) => rememberDimensions(job.originalUrl, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+                  style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale}) translate(-50%, -50%)` }}
+                />
+              </div>
+            )}
+          </article>
+          {job.variants.map((variant) => {
+            const compressedDimensions = previewDimensions[variant.url]
+            const showDimensions = dimensionsChanged(variant) && compressedDimensions
+            return (
+              <article className="comparison-card" data-comparison-kind={variant.preset} key={variant.preset}>
+                <header>
+                  <button className="comparison-download-row" type="button" onClick={() => onDownload(job, variant)} aria-label={`${messages.download} ${qualityLabel(variant.preset as QualityPreset, messages)}`}>
+                    <span className="comparison-summary">
+                      <strong className="comparison-size">{formatBytes(variant.blob.size)}</strong>
+                      {showDimensions ? (
+                        <span className="comparison-dimensions">{compressedDimensions.width} × {compressedDimensions.height}</span>
+                      ) : null}
+                      <AnimatedPercentage
+                        value={job.file.size > 0 ? Math.round((variant.blob.size / job.file.size) * 100) : 0}
+                        className="comparison-ratio"
+                      />
+                    </span>
+                    <DownloadSimple className="comparison-download-icon" size={14} weight="bold" />
+                  </button>
+                </header>
+                {job.kind === 'video' ? (
+                  variant.outputLabel === 'MP3' ? (
+                    <audio src={variant.previewUrl ?? variant.url} controls />
+                  ) : (
+                    <video
+                      src={variant.previewUrl ?? variant.url}
+                      controls
+                      playsInline
+                      onLoadedMetadata={(event) => rememberDimensions(variant.url, event.currentTarget.videoWidth, event.currentTarget.videoHeight)}
+                    />
+                  )
+                ) : isPdfVariant(variant) ? (
+                  <iframe src={pdfPreviewUrl(variant.previewUrl ?? variant.url, view.scale, fitToView)} title={`${qualityLabel(variant.preset as QualityPreset, messages)} PDF`} />
                 ) : (
-                  <video src={variant.previewUrl ?? variant.url} controls playsInline />
-                )
-              ) : isPdfVariant(variant) ? (
-                <iframe src={pdfPreviewUrl(variant.previewUrl ?? variant.url, view.scale, fitToView)} title={`${qualityLabel(variant.preset as QualityPreset, messages)} PDF`} />
-              ) : (
-                <div
-                  className={`comparison-image-stage${fitToView ? ' is-fit' : ''}`}
-                  onPointerDown={beginDrag}
-                  onPointerMove={moveDrag}
-                  onPointerUp={endDrag}
-                  onPointerCancel={endDrag}
-                  onWheel={wheel}
-                >
-                  <img
-                    src={variant.previewUrl ?? variant.url}
-                    alt={`${job.file.name} ${qualityLabel(variant.preset as QualityPreset, messages)}`}
-                    draggable={false}
-                    style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale}) translate(-50%, -50%)` }}
-                  />
-                </div>
-              )}
-            </article>
-          ))}
+                  <div
+                    className={`comparison-image-stage${fitToView ? ' is-fit' : ''}`}
+                    onPointerDown={beginDrag}
+                    onPointerMove={moveDrag}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                    onWheel={wheel}
+                  >
+                    <img
+                      src={variant.previewUrl ?? variant.url}
+                      alt={`${job.file.name} ${qualityLabel(variant.preset as QualityPreset, messages)}`}
+                      draggable={false}
+                      onLoad={(event) => rememberDimensions(variant.url, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)}
+                      style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale}) translate(-50%, -50%)` }}
+                    />
+                  </div>
+                )}
+              </article>
+            )
+          })}
         </div>
       ) : job.kind === 'video' ? (
         job.outputLabel === 'MP3' ? (
@@ -329,26 +509,26 @@ export function PreviewPanel({ job, jobs, messages, rememberedHeight, pinned, ex
             draggable={false}
             style={{ transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale}) translate(-50%, -50%)` }}
           />
-          {jobs.length > 1 ? (
-            <>
-              <button
-                className="preview-page previous"
-                type="button"
-                onClick={() => onSelect(jobs[(index - 1 + jobs.length) % jobs.length].id)}
-                aria-label={messages.previousPreview}
-                title={messages.previousPreview}
-              ><CaretLeft size={17} weight="bold" /></button>
-              <button
-                className="preview-page next"
-                type="button"
-                onClick={() => onSelect(jobs[(index + 1) % jobs.length].id)}
-                aria-label={messages.nextPreview}
-                title={messages.nextPreview}
-              ><CaretRight size={17} weight="bold" /></button>
-            </>
-          ) : null}
         </div>
       )}
+      {!showComparison && supportsImageView && jobs.length > 1 ? (
+        <>
+          <button
+            className="preview-page previous"
+            type="button"
+            onClick={() => onSelect(jobs[(index - 1 + jobs.length) % jobs.length].id)}
+            aria-label={messages.previousPreview}
+            title={messages.previousPreview}
+          ><CaretLeft size={17} weight="bold" /></button>
+          <button
+            className="preview-page next"
+            type="button"
+            onClick={() => onSelect(jobs[(index + 1) % jobs.length].id)}
+            aria-label={messages.nextPreview}
+            title={messages.nextPreview}
+          ><CaretRight size={17} weight="bold" /></button>
+        </>
+      ) : null}
     </aside>
   )
 }
