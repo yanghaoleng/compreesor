@@ -8,6 +8,7 @@ import {
   QUALITY_PRESETS,
   collectMediaFiles,
   compressFile,
+  compressImageVariants,
   normalizeQualityPreset,
   resolveCompressionSettings,
 } from '../src/core.js'
@@ -67,6 +68,16 @@ assert.ok((await stat(svgResult.outputPath)).size > 0)
 
 const pngPath = join(directory, 'sample.png')
 await sharp({ create: { width: 900, height: 600, channels: 4, background: '#d3f1ff' } }).png().toFile(pngPath)
+const batchPath = join(directory, 'batch.png')
+await sharp({ create: { width: 1200, height: 800, channels: 4, background: '#bde8ff' } }).png().toFile(batchPath)
+const batchResults = await compressImageVariants(batchPath, [
+  { preset: 'extreme', format: 'webp', outputName: 'batch-极限-压缩.webp' },
+  { preset: 'balanced', format: 'webp', outputName: 'batch-够用-压缩.webp' },
+  { preset: 'lossless', format: 'webp', outputName: 'batch-无损-压缩.webp' },
+])
+assert.equal(batchResults.length, 3)
+assert.ok(batchResults.every((result) => result.sourceRemoved === false && result.outputBytes > 0))
+assert.ok((await stat(batchPath)).size > 0)
 const webpResult = await compressFile(pngPath, { format: 'webp', replace: true })
 assert.equal(webpResult.outputPath, join(directory, 'sample.webp'))
 assert.ok((await stat(webpResult.outputPath)).size > 0)

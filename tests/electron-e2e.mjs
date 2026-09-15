@@ -25,34 +25,48 @@ const app = await electron.launch({ executablePath, args: [appDirectory], env: e
 try {
   const window = await app.firstWindow()
   await window.waitForLoadState('domcontentloaded')
-  await window.getByRole('heading', { name: '输出偏好' }).waitFor()
+  await window.evaluate(() => window.localStorage.setItem('compreesor-language', 'zh'))
+  await window.reload({ waitUntil: 'domcontentloaded' })
+  await window.locator('.preferences').waitFor()
   if ((await window.locator('.brand').innerText()).trim() !== '文件压缩大救星\nCompressor Studio') throw new Error('Electron brand is out of sync')
   if (await window.locator('.preferences select').first().inputValue() !== 'all') throw new Error('Electron should default to all qualities')
-  await window.locator('input[type="file"]').setInputFiles(sourcePath)
+  if (await window.locator('.drop-zone button, .drop-zone [role="button"]').count()) throw new Error('Electron drop zone should not show a file-picker button')
+  await window.locator('.file-picker-input').setInputFiles(sourcePath)
   await window.locator('.job-row.status-done').waitFor({ timeout: 120_000 })
   const files = await readdir(directory)
-  const expected = ['desktop-极限-压缩.svg', 'desktop-够用-压缩.svg', 'desktop-无损-压缩.svg']
+  const expected = ['desktop-极限-压缩.svg', 'desktop-够用-压缩.svg']
   for (const name of expected) {
     if (!files.includes(name)) throw new Error(`Electron did not save ${name} beside the source`)
     if ((await stat(join(directory, name))).size === 0) throw new Error(`${name} is empty`)
   }
+  if (files.includes('desktop-无损-压缩.svg')) throw new Error('Electron should not create a lossless parallel result')
   if (!files.includes('desktop.svg')) throw new Error('All-quality mode should preserve the source file')
-  if ((await window.locator('.variant-result-item').count()) !== 3) throw new Error('Electron result list does not show three qualities')
-  await window.getByRole('button', { name: '预览 desktop.svg' }).click()
+  if ((await window.locator('.variant-result-item').count()) !== 2) throw new Error('Electron result list does not show both parallel qualities')
+  if ((await window.locator('.job-name-column-header').innerText()).trim() !== '文件名') throw new Error('Electron file-name table header is missing')
+  if ((await window.locator('.variant-column-headers button').allInnerTexts()).join('|') !== '极限|够用') throw new Error('Electron result table header is missing')
+  const variantRatios = await window.locator('.variant-result-item .variant-ratio').allInnerTexts()
+  if (variantRatios.length !== 2 || variantRatios.some((ratio) => !/^\d+%$/.test(ratio.replace(/\s+/g, '')))) throw new Error(`Electron per-quality ratios are missing: ${variantRatios.join(' | ')}`)
+  if ((await window.locator('.job-state').innerText()).trim() !== '') throw new Error('Electron all-quality row should keep only the completion icon at the far right')
+  await window.locator('.result-preview.is-pinned').waitFor()
+  if (!(await window.locator('.download-all').innerText()).trim().startsWith('下载 · 够用')) throw new Error('Electron single-file action should download directly')
+  if (await window.getByRole('button', { name: '选择打包档位' }).count()) throw new Error('Electron single-file action should not show ZIP controls')
   if ((await window.locator('.comparison-card').count()) !== 3) throw new Error('Electron comparison preview is missing')
+  if ((await window.locator('.comparison-card').evaluateAll((cards) => cards.map((card) => card.getAttribute('data-comparison-kind')))).join('|') !== 'original|extreme|balanced') throw new Error('Electron comparison should place the original file first')
   if ((await window.locator('.comparison-toolbar').count()) !== 1) throw new Error('Electron synchronized comparison controls are missing')
-  await window.locator('.result-preview > header button').click()
+  if ((await window.locator('.comparison-toolbar select option').first().innerText()).trim() !== '全部显示') throw new Error('Electron zoom menu should put Show all first')
+  await window.locator('.preview-close').click()
 
   await window.getByRole('button', { name: '清空' }).click()
   await window.locator('.preferences select').first().selectOption('balanced')
   await window.locator('.preferences select').nth(1).selectOption('jpeg')
-  await window.locator('input[type="file"]').setInputFiles(pdfPath)
+  await window.locator('.file-picker-input').setInputFiles(pdfPath)
   await window.waitForFunction(() => document.querySelectorAll('.job-row.status-done').length === 2, undefined, { timeout: 120_000 })
   const convertedFiles = await readdir(directory)
   if (!convertedFiles.includes('desktop-pages.pdf')) throw new Error('PDF source should remain after page extraction')
   for (const name of ['desktop-pages-第1页-压缩.jpg', 'desktop-pages-第2页-压缩.jpg']) {
     if (!convertedFiles.includes(name) || (await stat(join(directory, name))).size === 0) throw new Error(`Electron did not save ${name}`)
   }
+
   console.log('Electron shared UI, synchronized comparison and PDF page persistence passed')
 } finally {
   await app.close()

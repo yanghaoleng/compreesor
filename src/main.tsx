@@ -1,6 +1,5 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { inject } from '@vercel/analytics'
 import './index.css'
 import App from './App.tsx'
 
@@ -15,7 +14,13 @@ try {
   document.documentElement.dataset.theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-if (!window.compreesorDesktop?.isDesktop) inject()
+if (
+  !window.compreesorDesktop?.isDesktop
+  && import.meta.env.PROD
+  && !['localhost', '127.0.0.1'].includes(window.location.hostname)
+) {
+  void import('@vercel/analytics').then(({ inject }) => inject())
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

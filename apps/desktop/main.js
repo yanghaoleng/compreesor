@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { compressFile } from 'compreesor-cli/core'
+import { compressFile, compressImageVariants } from 'compreesor-cli/core'
 import { mimeTypeForPath, readResultFile, replaceFileWithData, writeVariantFiles } from './native-files.js'
 import { DESKTOP_ORIGIN, DESKTOP_SCHEME, resolveWebAssetPath } from './web-protocol.js'
 
@@ -63,6 +63,31 @@ async function nativeCompress(payload) {
   }
 }
 
+async function nativeCompressVariants(payload) {
+  const inputPath = resolve(String(payload?.path ?? ''))
+  const format = typeof payload?.format === 'string' ? payload.format : 'original'
+  const inputExtension = inputPath.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? ''
+  if (!NATIVE_INPUT_EXTENSIONS.has(inputExtension) || !NATIVE_OUTPUT_FORMATS.has(format)) {
+    throw new Error('桌面原生多档核心仅处理图片与 SVG')
+  }
+  const variants = Array.isArray(payload?.variants) ? payload.variants : []
+  const results = await compressImageVariants(inputPath, variants.map((variant) => ({
+    preset: variant?.preset,
+    format,
+    outputName: variant?.outputName,
+  })))
+  return results.map((result) => {
+    const outputPath = resolve(result.outputPath)
+    approvedResultPaths.add(outputPath)
+    return {
+      ...result,
+      outputPath,
+      outputName: basename(outputPath),
+      mimeType: mimeTypeForPath(outputPath),
+    }
+  })
+}
+
 function createWindow() {
   const window = new BrowserWindow({
     width: 1080,
@@ -94,6 +119,7 @@ function createWindow() {
 }
 
 ipcMain.handle('desktop:compress-file', async (_event, payload) => nativeCompress(payload))
+ipcMain.handle('desktop:compress-variants', async (_event, payload) => nativeCompressVariants(payload))
 
 ipcMain.handle('desktop:replace-with-data', async (_event, payload) => {
   const result = await replaceFileWithData(payload?.sourcePath, payload?.outputExtension, payload?.data)

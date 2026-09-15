@@ -42,8 +42,12 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@compreesor/core": "file:../core",
     "commander": "^14.0.2",
     "sharp": "^0.34.5",
     "svgo": "^4.0.2"
-  }
+  },
+  "bundledDependencies": [
+    "@compreesor/core"
+  ]
 }
