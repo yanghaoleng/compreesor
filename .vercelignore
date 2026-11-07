@@ -4,7 +4,15 @@
 node_modules
 dist
 apps
-packages
+# Keep only CLI license notices needed by the web build.
+packages/*
+!packages/cli/
+packages/cli/*
+!packages/cli/LICENSE
+!packages/cli/THIRD_PARTY_NOTICES.md
+!packages/cli/DISTRIBUTION_COMPLIANCE.md
+!packages/cli/licenses/
+!packages/cli/licenses/**
 tests
 playwright-report
 test-results
