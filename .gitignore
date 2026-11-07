@@ -10,3 +10,10 @@ apps/desktop/web-dist/
 apps/desktop/node_modules/
 packages/cli/node_modules/
 .vercel
+
+# Generated third-party notices
+public/licenses/
+public/THIRD_PARTY_NOTICES.md
+public/DISTRIBUTION_COMPLIANCE.md
+public/LICENSE
+public/packages/cli/

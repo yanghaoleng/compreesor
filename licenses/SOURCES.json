@@ -1,0 +1,22 @@
+{
+  "checked": "2026-11-07",
+  "note": "Verbatim package license copies are from the locked npm versions in DEPENDENCIES.json; accompanying notices explain external upstream license sources and limits. These hashes identify this reviewed notice snapshot, not a complete corresponding-source archive.",
+  "files": [
+    {
+      "path": "licenses/DEPENDENCIES.json",
+      "sha256": "464efdaf261f277b1591a107f5cfeee192bffc12e66759ad9c473284b48a3838"
+    },
+    {
+      "path": "licenses/ffmpeg/BUILD-INFO.txt",
+      "sha256": "d33d23c8eed888e4affa630f81ba78af8c5cf3a765b8cad1164c160004ee6bcd"
+    },
+    {
+      "path": "licenses/ffmpeg/GPL-2.0.txt",
+      "sha256": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643"
+    },
+    {
+      "path": "licenses/ffmpeg-wrappers/MIT.txt",
+      "sha256": "3e123e29517d76504ffce77b3f8e2ccffd4712493f27694b0aba3e376676459f"
+    }
+  ]
+}

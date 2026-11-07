@@ -1,0 +1,34 @@
+{
+  "checked": "2026-11-07",
+  "scope": "Selected reviewed components; not an exhaustive dependency or binary-source inventory. Versions and integrity from package-lock.json.",
+  "packages": [
+    {
+      "version": "0.34.5",
+      "license": "Apache-2.0",
+      "resolved": "https://registry.npmmirror.com/sharp/-/sharp-0.34.5.tgz",
+      "integrity": "sha512-Ou9I5Ft9WNcCbXrU9cMgPBcCK8LiwLqcbywW3t4oDV37n1pzpuNLsYiAV8eODnjbtQlSDwZ2cUEeQz4E54Hltg==",
+      "name": "sharp"
+    },
+    {
+      "version": "1.2.4",
+      "license": "LGPL-3.0-or-later",
+      "resolved": "https://registry.npmmirror.com/@img/sharp-libvips-linux-x64/-/sharp-libvips-linux-x64-1.2.4.tgz",
+      "integrity": "sha512-tJxiiLsmHc9Ax1bz3oaOYBURTXGIRDODBqhveVHonrHJ9/+k89qbLl0bcJns+e4t4rvaNBxaEZsFtSfAdquPrw==",
+      "name": "@img/sharp-libvips-linux-x64"
+    },
+    {
+      "version": "1.2.4",
+      "license": "LGPL-3.0-or-later",
+      "resolved": "https://registry.npmmirror.com/@img/sharp-libvips-darwin-arm64/-/sharp-libvips-darwin-arm64-1.2.4.tgz",
+      "integrity": "sha512-zqjjo7RatFfFoP0MkQ51jfuFZBnVE2pRiaydKJ1G/rHZvnsrHAOcQALIi9sA5co5xenQdTugCvtb1cuf78Vf4g==",
+      "name": "@img/sharp-libvips-darwin-arm64"
+    },
+    {
+      "version": "1.2.4",
+      "license": "LGPL-3.0-or-later",
+      "resolved": "https://registry.npmmirror.com/@img/sharp-libvips-darwin-x64/-/sharp-libvips-darwin-x64-1.2.4.tgz",
+      "integrity": "sha512-1IOd5xfVhlGwX+zXv2N93k0yMONvUlANylbJw1eTah8K/Jtpi15KC+WSiaX/nBmbm2HxRM1gZ0nSdjSsrZbGKg==",
+      "name": "@img/sharp-libvips-darwin-x64"
+    }
+  ]
+}

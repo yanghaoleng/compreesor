@@ -1,10 +1,10 @@
 # 文件压缩大救星 · Compressor Studio
 
-一个轻量、开源、可商用的图片、SVG、GIF、PDF 与视频压缩工具，包含网页版、npm CLI 和 Electron 桌面版。
+一个轻量的图片、SVG、GIF、PDF 与视频压缩工具，包含网页版、npm CLI 和 Electron 桌面版。
 
 - 在线使用：[compreesor.mikeywa.icu](https://compreesor.mikeywa.icu/)
 - npm CLI：[compreesor-cli](https://www.npmjs.com/package/compreesor-cli)
-- 许可证：MIT
+- 项目自有代码许可证：MIT；第三方组件按各自许可，见 [第三方许可说明](THIRD_PARTY_NOTICES.md)
 
 ## 网页版
 
@@ -62,7 +62,7 @@ npm start
 npm run dist
 ```
 
-替换使用同目录临时文件与回滚备份：新文件写入成功后才移除原文件。桌面安装包不内置不可再分发的原生 FFmpeg，GIF 与视频沿用网页内置的 ffmpeg.wasm。详细说明见 [`apps/desktop`](./apps/desktop)。
+替换使用同目录临时文件与回滚备份：新文件写入成功后才移除原文件。桌面安装包不内置原生 FFmpeg；GIF 与视频沿用网页内置的 ffmpeg.wasm 核心，该核心适用 GPL-2.0-or-later，分发时须核对对应源码及其他许可条件。详细说明见 [`apps/desktop`](./apps/desktop)。
 
 ## 开发与验证
 
@@ -80,3 +80,5 @@ npm run e2e:pdf
 ## License
 
 [MIT](./LICENSE) © 2026 Mikey Wa
+
+第三方依赖的授权不由根 MIT 覆盖。重新分发网页、CLI 或桌面包前，请阅读 [第三方通知](THIRD_PARTY_NOTICES.md)与 [分发检查清单](DISTRIBUTION_COMPLIANCE.md)；补齐通知不等于所有 GPL/LGPL 义务均已完成。

@@ -14,7 +14,10 @@
     "bin",
     "src",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "DISTRIBUTION_COMPLIANCE.md",
+    "licenses"
   ],
   "scripts": {
     "test": "node test/test.mjs",

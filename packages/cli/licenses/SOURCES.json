@@ -1,0 +1,30 @@
+{
+  "checked": "2026-11-07",
+  "note": "Verbatim package license copies are from the locked npm versions in DEPENDENCIES.json; accompanying notices explain external upstream license sources and limits. These hashes identify this reviewed notice snapshot, not a complete corresponding-source archive.",
+  "files": [
+    {
+      "path": "licenses/DEPENDENCIES.json",
+      "sha256": "affdf95bf2d42dda79acbeafe99503c7544ffbbc0280737f7c3f248147b5179f"
+    },
+    {
+      "path": "licenses/GPL-3.0.txt",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    {
+      "path": "licenses/LGPL-3.0.txt",
+      "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+    },
+    {
+      "path": "licenses/sharp/LICENSE",
+      "sha256": "73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68"
+    },
+    {
+      "path": "licenses/sharp-libvips/THIRD-PARTY-NOTICES.md",
+      "sha256": "3f416978dd2448ddab0d413d333c45fb208acdc066c280b95ebcb2f8b9f34ab9"
+    },
+    {
+      "path": "licenses/sharp-libvips/linux-x64-versions.json",
+      "sha256": "e823074bfa33ed7b1861b797dd3c60d7ef8c34cd2faa9a7d22ec32dd6d6ad8ad"
+    }
+  ]
+}
